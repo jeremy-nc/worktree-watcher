@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { promises as fs } from 'node:fs'
 import * as path from 'node:path'
 import { promisify } from 'node:util'
 
@@ -34,6 +35,35 @@ export class GitWorktreeRemover implements WorktreeRemover {
     return {
       dirtyFiles: dirty.split('\n').filter((line) => line.trim().length > 0).length,
       unpushedCommits: Number.parseInt(unpushed.trim(), 10) || 0
+    }
+  }
+
+  /**
+   * The two signals that say when a worktree was last worked in.
+   *
+   * Read on demand rather than during the scan: this is a git call and a stat
+   * per worktree, which would be ruinous on a watcher that rescans whenever the
+   * tree changes, and unnoticeable on an explicit click.
+   *
+   * Either signal may be absent — a worktree with no reachable commit, or a
+   * directory that has since vanished. What to do about that is the domain's
+   * call, not this layer's.
+   */
+  async age(worktreePath: string): Promise<{ lastCommitAt?: number; directoryModifiedAt?: number }> {
+    const [commit, modified] = await Promise.all([
+      // `%ct` is the committer date in epoch seconds.
+      this.git(worktreePath, ['log', '-1', '--format=%ct'])
+        .then((stdout) => Number.parseInt(stdout.trim(), 10) * 1000)
+        .catch(() => Number.NaN),
+      fs
+        .stat(worktreePath)
+        .then((stats) => stats.mtimeMs)
+        .catch(() => Number.NaN)
+    ])
+
+    return {
+      lastCommitAt: Number.isFinite(commit) ? commit : undefined,
+      directoryModifiedAt: Number.isFinite(modified) ? modified : undefined
     }
   }
 

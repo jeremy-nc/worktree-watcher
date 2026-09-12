@@ -38,6 +38,8 @@ export interface Settings {
   readonly rootPath: string
   readonly maxDepth: number
   readonly showEmptyRepositories: boolean
+  /** Idle days after which clean-up offers a worktree for removal. */
+  readonly staleDays: number
   onDidChange(listener: () => void): Disposable
 }
 

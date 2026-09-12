@@ -2,6 +2,7 @@ import * as os from 'node:os'
 import * as path from 'node:path'
 import * as vscode from 'vscode'
 
+import { DEFAULT_STALE_DAYS } from '../domain/cleanUp'
 import { DEFAULT_DEPLOY_ENVIRONMENT, DEFAULT_DEPLOY_PREFERENCE } from '../domain/deploy'
 import {
   ActivitySettings,
@@ -107,6 +108,10 @@ export class VscodeSettings implements Settings {
 
   get showEmptyRepositories(): boolean {
     return this.read<boolean>('showEmptyRepositories', false)
+  }
+
+  get staleDays(): number {
+    return Math.max(1, this.read<number>('cleanUp.staleDays', DEFAULT_STALE_DAYS))
   }
 
   onDidChange(listener: () => void): Disposable {

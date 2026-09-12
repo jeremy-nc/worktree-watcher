@@ -5,7 +5,7 @@ import * as vscode from 'vscode'
 import { ActivityStore } from './application/activityStore'
 import { PullRequestStore } from './application/pullRequestStore'
 import { WorktreeStore } from './application/worktreeStore'
-import { ClaudeSession } from './domain/model'
+import { ClaudeSession, Repository } from './domain/model'
 import { BranchRef, PullRequest } from './domain/pullRequest'
 import { GhPullRequestSource } from './infrastructure/ghPullRequestSource'
 import { BuildStore } from './application/buildStore'
@@ -19,6 +19,14 @@ import {
   WorktreeDirtyError
 } from './infrastructure/gitWorktreeRemover'
 import { planRemoval } from './domain/removal'
+import {
+  CleanUpCandidate,
+  CleanUpOutcome,
+  candidateDescription,
+  confirmCleanUp,
+  selectStale,
+  summariseCleanUp
+} from './domain/cleanUp'
 import { chooseDeployTargets, deployProjectOf, describeDeploy, DeployTarget } from './domain/deploy'
 import { ClaudeCodeLauncher, resumeInTerminal } from './infrastructure/claudeCodeLauncher'
 import { ClaudeTranscriptVerifier } from './infrastructure/claudeTranscriptVerifier'
@@ -48,10 +56,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // One index shared by everything that resolves a session id to its transcript.
   const transcriptIndex = new TranscriptIndex(path.join(os.homedir(), '.claude', 'projects'))
   const transcripts = new ClaudeTranscriptVerifier(undefined, transcriptIndex)
+  const settings = new VscodeSettings()
   const store = new WorktreeStore(
     new FsWorktreeScanner(transcripts),
     new VscodeDirectoryWatcher(),
-    new VscodeSettings(),
+    settings,
     logger
   )
 
@@ -242,6 +251,18 @@ export function activate(context: vscode.ExtensionContext): void {
         onRemoved: () => store.refresh()
       })
     }),
+    vscode.commands.registerCommand('worktreeWatcher.cleanUpWorktrees', async (node?: Node) => {
+      if (node?.kind !== 'repository') {
+        return
+      }
+      await cleanUpWorktrees(node.repository, {
+        remover,
+        staleDays: settings.staleDays,
+        pullRequest: (branch) => pullRequests.find(node.repository.name, branch),
+        logger,
+        onRemoved: () => store.refresh()
+      })
+    }),
     vscode.commands.registerCommand('worktreeWatcher.copySessionId', async (node?: Node) => {
       const session = await chooseSession(node, 'Copy which session id?', transcripts)
       if (session) {
@@ -388,6 +409,161 @@ async function triggerDeploy(
  * Confirms, then removes. The dialog carries the facts that differ per worktree —
  * a generic "are you sure?" just trains you to click through it.
  */
+/**
+ * Offers every worktree in a repository that has gone quiet, and removes the
+ * ones you tick.
+ *
+ * Deliberately narrower than the single-worktree flow: it never forces past a
+ * dirty tree and never deletes a branch. Both are reasonable answers for one
+ * worktree you are looking straight at, and a poor bet across a checklist —
+ * so a dirty worktree is reported as skipped and left for the per-item flow,
+ * which asks about discarding changes by name.
+ */
+async function cleanUpWorktrees(
+  repository: Repository,
+  deps: {
+    remover: GitWorktreeRemover
+    staleDays: number
+    pullRequest: (branch: string | undefined) => PullRequest | undefined
+    logger: OutputLogger
+    onRemoved: () => void
+  }
+): Promise<void> {
+  const { remover } = deps
+  const worktrees = repository.worktrees.filter((worktree) => !worktree.isMain)
+  if (worktrees.length === 0) {
+    void vscode.window.showInformationMessage(`${repository.name} has no worktrees.`)
+    return
+  }
+
+  // Inspecting is several git calls per worktree, so it runs behind progress and
+  // all at once rather than in sequence.
+  const inspected = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: `Checking ${worktrees.length} worktree(s) in ${repository.name}…`
+    },
+    () =>
+      Promise.all(
+        worktrees.map(async (worktree) => ({
+          worktree,
+          ...(await remover.age(worktree.absolutePath)),
+          // A worktree git cannot read is reported as clean; `selectStale` still
+          // needs an age before it will offer it, so this cannot invent a victim.
+          status: await remover
+            .status(worktree.absolutePath)
+            .catch(() => ({ dirtyFiles: 0, unpushedCommits: 0 })),
+          pullRequest: deps.pullRequest(worktree.branch)
+        }))
+      )
+  )
+
+  const candidates = selectStale(inspected, { now: Date.now(), staleDays: deps.staleDays })
+  if (candidates.length === 0) {
+    void vscode.window.showInformationMessage(
+      `No worktrees in ${repository.name} have been idle for ${deps.staleDays} days.`
+    )
+    return
+  }
+
+  const picked = await vscode.window.showQuickPick(
+    candidates.map((candidate) => ({
+      label: worktreeLabel(candidate.worktree),
+      description: candidateDescription(candidate),
+      detail: candidate.warning,
+      // Only clean, fully pushed worktrees start ticked. Anything that could
+      // strand work is an explicit choice.
+      picked: candidate.safe,
+      candidate
+    })),
+    {
+      canPickMany: true,
+      title: `Idle worktrees in ${repository.name}`,
+      placeHolder: `Idle for ${deps.staleDays} days or more — ticked items will be removed`,
+      matchOnDescription: true,
+      matchOnDetail: true
+    }
+  )
+  if (!picked || picked.length === 0) {
+    return
+  }
+
+  const selected = picked.map((item) => item.candidate)
+  const confirmation = confirmCleanUp(repository.name, selected)
+  const choice = await vscode.window.showWarningMessage(
+    confirmation.title,
+    { modal: true, detail: confirmation.detail },
+    `Remove ${selected.length}`
+  )
+  if (!choice) {
+    return
+  }
+
+  const outcomes = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'Removing worktrees…' },
+    () => removeEach(selected, remover, deps.logger)
+  )
+
+  deps.onRemoved()
+  reportCleanUp(outcomes)
+}
+
+/**
+ * Removes each selection in turn.
+ *
+ * Sequential on purpose: `git worktree remove` writes to the shared
+ * `.git/worktrees` administrative directory, so parallel removals in one
+ * repository race each other.
+ */
+async function removeEach(
+  selected: readonly CleanUpCandidate[],
+  remover: GitWorktreeRemover,
+  logger: OutputLogger
+): Promise<CleanUpOutcome[]> {
+  const outcomes: CleanUpOutcome[] = []
+
+  for (const candidate of selected) {
+    const label = worktreeLabel(candidate.worktree)
+    try {
+      // Resolved per worktree and before removal — afterwards the directory,
+      // and the pointer back to the main checkout, are gone.
+      const main = await remover.mainRepository(candidate.worktree.absolutePath)
+      await remover.remove(main, candidate.worktree.absolutePath, false)
+      logger.info(`cleaned up worktree ${candidate.worktree.absolutePath}`)
+      outcomes.push({ label, removed: true })
+    } catch (error) {
+      const reason =
+        error instanceof WorktreeDirtyError ? 'uncommitted changes' : describeError(error)
+      logger.info(`could not remove ${candidate.worktree.absolutePath}: ${reason}`)
+      outcomes.push({ label, removed: false, reason })
+    }
+  }
+
+  return outcomes
+}
+
+/** Says what happened, and shows the detail only when something went wrong. */
+function reportCleanUp(outcomes: readonly CleanUpOutcome[]): void {
+  const failed = outcomes.filter((outcome) => !outcome.removed)
+  const summary = summariseCleanUp(outcomes)
+
+  if (failed.length === 0) {
+    void vscode.window.showInformationMessage(summary)
+    return
+  }
+
+  void vscode.window
+    .showWarningMessage(summary, 'Show Details')
+    .then((choice) => {
+      if (choice) {
+        void vscode.window.showWarningMessage(summary, {
+          modal: true,
+          detail: failed.map((outcome) => `${outcome.label} — ${outcome.reason}`).join('\n')
+        })
+      }
+    })
+}
+
 async function removeWorktree(
   node: Extract<Node, { kind: 'worktree' }>,
   deps: {

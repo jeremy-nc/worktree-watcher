@@ -408,6 +408,62 @@ explanation rather than silently forced.
 The Claude session sidecar needs no cleanup — `git worktree remove` deletes
 `.git/worktrees/<name>/` along with it.
 
+## Cleaning up idle worktrees
+
+Worktrees accumulate. The **Clean Up Idle Worktrees…** button on a repository row
+finds the ones that have gone quiet and removes the ones you tick:
+
+```
+Idle worktrees in upside
+Idle for 14 days or more — ticked items will be removed
+
+ [x] CONN-580-queues        2 months idle
+ [x] CONN-508               2 months idle
+ [ ] CONN-725               44 days idle    1 uncommitted change — git will refuse
+ [x] CONN-756               37 days idle
+```
+
+### What "idle" measures
+
+The **more recent** of two signals: the last commit on the branch, and the
+worktree directory's mtime.
+
+Taking the newer of the two is the conservative direction. Each signal misses a
+different kind of work — committing need not touch the directory's mtime, and
+editing files without committing does not move `HEAD` — so a worktree counts as
+active if *either* says so. A branch untouched for 90 days that you edited this
+morning does not appear.
+
+A worktree whose age cannot be read is skipped entirely. An unknown age is not an
+old age, and guessing in a delete flow is how you lose work.
+
+These signals are read on click, never during a scan: it is a git call and a stat
+per worktree, which is unnoticeable once and ruinous on a watcher that rescans
+whenever the tree changes.
+
+### Why only some boxes start ticked
+
+Only worktrees that are **clean and fully pushed** are pre-selected. Anything
+holding uncommitted changes or unpushed commits is listed with the reason but
+left unticked, so removing it is a deliberate act rather than the default.
+
+Dirty worktrees are shown rather than hidden — they are usually the ones you most
+want to know about — but this flow will not force past git's refusal. That stays
+with **Remove Worktree…**, which names the file count before discarding anything.
+
+### What it will not do
+
+| | |
+|---|---|
+| Force past a dirty worktree | Reported as skipped; use the per-item flow |
+| Delete branches | Never — the stated guarantee of the confirmation |
+| Remove the main checkout | Not a worktree, never a candidate |
+| Run removals in parallel | `git worktree remove` writes to the shared `.git/worktrees` admin directory, so they would race |
+
+Partial failure is reported honestly — "Removed 7 worktrees; 2 could not be
+removed", with **Show Details** naming each one. A bulk action that quietly
+skipped things would leave you believing the tree is cleaner than it is.
+
 ## Architecture
 
 Ports and adapters, so the interesting logic runs under plain `node --test` with no VS
@@ -618,6 +674,7 @@ Lost the panel? <kbd>⌘⇧P</kbd> → `Focus on Worktrees View`.
 | `worktreeWatcher.rootPath` | `~/Code` | Directory to watch. Supports `~`, `${userHome}`, `${workspaceFolder}`. |
 | `worktreeWatcher.maxDepth` | `4` | Search depth inside each `.worktrees` directory. |
 | `worktreeWatcher.showEmptyRepositories` | `false` | Show repos whose `.worktrees` is empty. |
+| `worktreeWatcher.cleanUp.staleDays` | `14` | Idle days before clean-up offers a worktree. |
 
 `rootPath` is `machine-overridable` so Settings Sync does not push a machine-specific
 absolute path to your other machines.
@@ -625,8 +682,9 @@ absolute path to your other machines.
 ## Actions
 
 **Repository rows** have an inline **Open in New Window** that opens the
-`<repo>.worktrees/` container — one window holding every worktree for that repo.
-The repo's main checkout is the `main` row beneath it, with its own button.
+`<repo>.worktrees/` container — one window holding every worktree for that repo —
+and **Clean Up Idle Worktrees…**. The repo's main checkout is the `main` row
+beneath it, with its own button.
 
 **Worktree rows**: **Open Claude Session** and **Open in New Window** inline; the
 context menu adds **Add Folder to Workspace**, **Reveal in Finder**, **Copy Path**,

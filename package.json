@@ -2,7 +2,7 @@
   "name": "worktree-watcher",
   "displayName": "Worktree Watcher",
   "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
-  "version": "0.20.1",
+  "version": "0.21.0",
   "publisher": "jeremyheritage",
   "license": "MIT",
   "engines": {
@@ -111,6 +111,12 @@
         "icon": "$(trash)"
       },
       {
+        "command": "worktreeWatcher.cleanUpWorktrees",
+        "title": "Clean Up Idle Worktrees…",
+        "category": "Worktrees",
+        "icon": "$(clear-all)"
+      },
+      {
         "command": "worktreeWatcher.connectTeamCity",
         "title": "Connect to TeamCity…",
         "category": "Worktrees",
@@ -168,6 +174,10 @@
           "when": "false"
         },
         {
+          "command": "worktreeWatcher.cleanUpWorktrees",
+          "when": "false"
+        },
+        {
           "command": "worktreeWatcher.openBuild",
           "when": "false"
         },
@@ -193,6 +203,16 @@
           "command": "worktreeWatcher.openInNewWindow",
           "when": "view == worktreeWatcher.tree && viewItem == worktreeWatcher.repository",
           "group": "inline@0"
+        },
+        {
+          "command": "worktreeWatcher.cleanUpWorktrees",
+          "when": "view == worktreeWatcher.tree && viewItem == worktreeWatcher.repository",
+          "group": "inline@1"
+        },
+        {
+          "command": "worktreeWatcher.cleanUpWorktrees",
+          "when": "view == worktreeWatcher.tree && viewItem == worktreeWatcher.repository",
+          "group": "1_open@3"
         },
         {
           "command": "worktreeWatcher.openClaudeSession",
@@ -300,6 +320,12 @@
           "type": "boolean",
           "default": true,
           "markdownDescription": "Show GitHub pull request status for each worktree branch. Uses the `gh` CLI's own authentication; no token is stored here."
+        },
+        "worktreeWatcher.cleanUp.staleDays": {
+          "type": "number",
+          "default": 14,
+          "minimum": 1,
+          "markdownDescription": "Days a worktree must be idle before **Clean Up Idle Worktrees** offers it. Idle means no commit *and* no file change — whichever is more recent wins, so uncommitted work counts as active."
         },
         "worktreeWatcher.github.organisation": {
           "type": "string",
