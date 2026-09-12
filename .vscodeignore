@@ -1,0 +1,11 @@
+.vscode/**
+node_modules/**
+src/**
+out/**/*.map
+.gitignore
+tsconfig.json
+package-lock.json
+**/.DS_Store
+out/test/**
+src/test/**
+skill/**

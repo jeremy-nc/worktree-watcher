@@ -1,0 +1,386 @@
+{
+  "name": "worktree-watcher",
+  "displayName": "Worktree Watcher",
+  "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
+  "version": "0.20.1",
+  "publisher": "jeremyheritage",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "panel": [
+        {
+          "id": "worktreeWatcher",
+          "title": "Worktrees",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "worktreeWatcher": [
+        {
+          "id": "worktreeWatcher.tree",
+          "name": "Worktrees",
+          "type": "tree",
+          "contextualTitle": "Worktrees"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "worktreeWatcher.tree",
+        "contents": "No worktrees found.\n\nThis panel lists directories matching `<repo>.worktrees/` under the watched root.\n\n[Open settings](command:worktreeWatcher.openSettings)\n[Rescan](command:worktreeWatcher.refresh)"
+      }
+    ],
+    "commands": [
+      {
+        "command": "worktreeWatcher.refresh",
+        "title": "Rescan",
+        "category": "Worktrees",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "worktreeWatcher.reveal",
+        "title": "Show Panel",
+        "category": "Worktrees"
+      },
+      {
+        "command": "worktreeWatcher.openSettings",
+        "title": "Open Settings",
+        "category": "Worktrees",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "worktreeWatcher.openInNewWindow",
+        "title": "Open in New Window",
+        "category": "Worktrees",
+        "icon": "$(empty-window)"
+      },
+      {
+        "command": "worktreeWatcher.addToWorkspace",
+        "title": "Add Folder to Workspace",
+        "category": "Worktrees"
+      },
+      {
+        "command": "worktreeWatcher.revealInFinder",
+        "title": "Reveal in Finder",
+        "category": "Worktrees"
+      },
+      {
+        "command": "worktreeWatcher.copyPath",
+        "title": "Copy Path",
+        "category": "Worktrees"
+      },
+      {
+        "command": "worktreeWatcher.openClaudeSession",
+        "title": "Open Claude Session",
+        "category": "Worktrees",
+        "icon": "$(comment-discussion)"
+      },
+      {
+        "command": "worktreeWatcher.resumeClaudeSession",
+        "title": "Resume Claude Session in Terminal",
+        "category": "Worktrees",
+        "icon": "$(terminal)"
+      },
+      {
+        "command": "worktreeWatcher.copySessionId",
+        "title": "Copy Claude Session ID",
+        "category": "Worktrees"
+      },
+      {
+        "command": "worktreeWatcher.openPullRequest",
+        "title": "Open Pull Request",
+        "category": "Worktrees",
+        "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "worktreeWatcher.removeWorktree",
+        "title": "Remove Worktree…",
+        "category": "Worktrees",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "worktreeWatcher.connectTeamCity",
+        "title": "Connect to TeamCity…",
+        "category": "Worktrees",
+        "icon": "$(plug)"
+      },
+      {
+        "command": "worktreeWatcher.openBuild",
+        "title": "Open Build in TeamCity",
+        "category": "Worktrees",
+        "icon": "$(rocket)"
+      },
+      {
+        "command": "worktreeWatcher.triggerDeploy",
+        "title": "Trigger Deploy in TeamCity…",
+        "category": "Worktrees",
+        "icon": "$(rocket)"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "worktreeWatcher.openInNewWindow",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.addToWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.revealInFinder",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.copyPath",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.resumeClaudeSession",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.copySessionId",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.openClaudeSession",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.openPullRequest",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.removeWorktree",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.openBuild",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.triggerDeploy",
+          "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "worktreeWatcher.refresh",
+          "when": "view == worktreeWatcher.tree",
+          "group": "navigation@1"
+        },
+        {
+          "command": "worktreeWatcher.openSettings",
+          "when": "view == worktreeWatcher.tree",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "worktreeWatcher.openInNewWindow",
+          "when": "view == worktreeWatcher.tree && viewItem == worktreeWatcher.repository",
+          "group": "inline@0"
+        },
+        {
+          "command": "worktreeWatcher.openClaudeSession",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree\\.claude/",
+          "group": "inline@0"
+        },
+        {
+          "command": "worktreeWatcher.openInNewWindow",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.(worktree|mainCheckout)/",
+          "group": "inline"
+        },
+        {
+          "command": "worktreeWatcher.openInNewWindow",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.(worktree|mainCheckout)/",
+          "group": "1_open@1"
+        },
+        {
+          "command": "worktreeWatcher.addToWorkspace",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.(worktree|mainCheckout)/",
+          "group": "1_open@2"
+        },
+        {
+          "command": "worktreeWatcher.revealInFinder",
+          "when": "view == worktreeWatcher.tree",
+          "group": "2_path@1"
+        },
+        {
+          "command": "worktreeWatcher.copyPath",
+          "when": "view == worktreeWatcher.tree",
+          "group": "2_path@2"
+        },
+        {
+          "command": "worktreeWatcher.resumeClaudeSession",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree\\.claude/",
+          "group": "3_claude@1"
+        },
+        {
+          "command": "worktreeWatcher.copySessionId",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree\\.claude/",
+          "group": "3_claude@2"
+        },
+        {
+          "command": "worktreeWatcher.openClaudeSession",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree\\.claude/",
+          "group": "3_claude@0"
+        },
+        {
+          "command": "worktreeWatcher.openPullRequest",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree.*\\.pr/",
+          "group": "4_github@1"
+        },
+        {
+          "command": "worktreeWatcher.removeWorktree",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree(\\.|$)/",
+          "group": "5_danger@1"
+        },
+        {
+          "command": "worktreeWatcher.openBuild",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree.*\\.build/",
+          "group": "4_github@2"
+        },
+        {
+          "command": "worktreeWatcher.openInNewWindow",
+          "when": "view == worktreeWatcher.tree && viewItem == worktreeWatcher.repository",
+          "group": "1_open@1"
+        },
+        {
+          "command": "worktreeWatcher.addToWorkspace",
+          "when": "view == worktreeWatcher.tree && viewItem == worktreeWatcher.repository",
+          "group": "1_open@2"
+        },
+        {
+          "command": "worktreeWatcher.triggerDeploy",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree(\\.|$)/ && config.worktreeWatcher.teamCity.enabled",
+          "group": "inline@1"
+        },
+        {
+          "command": "worktreeWatcher.triggerDeploy",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree(\\.|$)/ && config.worktreeWatcher.teamCity.enabled",
+          "group": "4_github@3"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Worktree Watcher",
+      "properties": {
+        "worktreeWatcher.rootPath": {
+          "type": "string",
+          "default": "~/Code",
+          "scope": "machine-overridable",
+          "markdownDescription": "Directory to watch for `<repo>.worktrees/` folders. Supports `~`, `${userHome}` and `${workspaceFolder}`."
+        },
+        "worktreeWatcher.maxDepth": {
+          "type": "number",
+          "default": 4,
+          "minimum": 1,
+          "description": "How deep to search inside each .worktrees directory. Branch names with slashes become nested folders, so this must exceed the deepest branch prefix."
+        },
+        "worktreeWatcher.showEmptyRepositories": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show repositories whose .worktrees directory currently holds no worktrees."
+        },
+        "worktreeWatcher.github.enabled": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Show GitHub pull request status for each worktree branch. Uses the `gh` CLI's own authentication; no token is stored here."
+        },
+        "worktreeWatcher.github.organisation": {
+          "type": "string",
+          "default": "",
+          "description": "GitHub organisation that owns the repositories. Pull request status stays off until this is set."
+        },
+        "worktreeWatcher.github.pollMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "Minutes between pull request polls. One GraphQL request covers every branch; polling only runs while the panel is visible."
+        },
+        "worktreeWatcher.activity.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show what each worktree's Claude session is currently doing, read from its transcript."
+        },
+        "worktreeWatcher.teamCity.enabled": {
+          "type": "boolean",
+          "default": false,
+          "markdownDescription": "Show TeamCity build status per worktree branch. Requires `#worktreeWatcher.teamCity.url#` and signing in — run **Worktrees: Connect to TeamCity…**."
+        },
+        "worktreeWatcher.teamCity.url": {
+          "type": "string",
+          "default": "",
+          "description": "TeamCity base URL, e.g. https://teamcity.example.com"
+        },
+        "worktreeWatcher.teamCity.iapClientId": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Google **desktop** OAuth client ID used to satisfy the Identity-Aware Proxy in front of TeamCity."
+        },
+        "worktreeWatcher.teamCity.iapClientSecret": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Client secret for the desktop OAuth client. A desktop client's secret is not confidential (RFC 8252 §8.5); the refresh token and TeamCity token are stored in the OS keychain instead."
+        },
+        "worktreeWatcher.teamCity.pollMinutes": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "description": "Minutes between TeamCity polls. One request per worktree branch; polling only runs while the panel is visible."
+        },
+        "worktreeWatcher.teamCity.iapAudience": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Optional. Target audience for the Google id_token sent to IAP. Leave empty to use the OAuth client id, which is correct when that client is IAP's allowed programmatic-access client."
+        },
+        "worktreeWatcher.teamCity.deployBuildTypeNames": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "Terraform Apply + App Deploy",
+            "Start Deploy"
+          ],
+          "markdownDescription": "Build configuration names the deploy button looks for, in order. The first that exists in the branch's environment project is used — projects differ: some top their chain with `Terraform Apply + App Deploy`, others with `Start Deploy`. No button is shown if none match."
+        },
+        "worktreeWatcher.teamCity.deployEnvironment": {
+          "type": "string",
+          "default": "Development",
+          "markdownDescription": "**Safety guard.** Only build configurations whose project matches this may be triggered. Every environment in a project tree uses the same configuration names, so without this a deploy button could queue a *production* deploy. Setting it empty removes the guard."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -watch -p .",
+    "test": "npm run compile && node --test \"out/test/*.test.js\"",
+    "package": "npx --yes @vscode/vsce package --allow-missing-repository",
+    "install-local": "npm run package && code --install-extension $(ls -t *.vsix | head -1)",
+    "vscode:prepublish": "npm run compile"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.90.0",
+    "typescript": "^5.7.0"
+  }
+}
