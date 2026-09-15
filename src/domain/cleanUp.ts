@@ -120,14 +120,14 @@ function warn(status: WorktreeStatus): string | undefined {
 
 /** Right-hand text in the list: how old, and the PR if there is one. */
 export function candidateDescription(candidate: CleanUpCandidate): string {
-  const parts = [describeAge(candidate.ageDays)]
+  const parts = [describeIdleDays(candidate.ageDays)]
   if (candidate.pullRequest) {
     parts.push(`PR ${pullRequestSummary(candidate.pullRequest)}`)
   }
   return parts.join('  ·  ')
 }
 
-export function describeAge(ageDays: number): string {
+export function describeIdleDays(ageDays: number): string {
   if (ageDays >= 365) {
     const years = Math.floor(ageDays / 365)
     return `${count(years, 'year')} idle`

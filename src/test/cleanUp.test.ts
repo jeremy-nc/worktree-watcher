@@ -6,7 +6,7 @@ import {
   MILLISECONDS_PER_DAY,
   candidateDescription,
   confirmCleanUp,
-  describeAge,
+  describeIdleDays,
   lastActivity,
   selectStale,
   summariseCleanUp
@@ -155,21 +155,21 @@ describe('selectStale', () => {
   })
 })
 
-describe('describeAge', () => {
+describe('describeIdleDays', () => {
   it('counts in days up to two months', () => {
-    assert.equal(describeAge(40), '40 days idle')
+    assert.equal(describeIdleDays(40), '40 days idle')
   })
 
   it('uses months once days stop being readable', () => {
-    assert.equal(describeAge(90), '3 months idle')
+    assert.equal(describeIdleDays(90), '3 months idle')
   })
 
   it('uses years for the truly forgotten', () => {
-    assert.equal(describeAge(400), '1 year idle')
+    assert.equal(describeIdleDays(400), '1 year idle')
   })
 
   it('says one day, not 1 days', () => {
-    assert.equal(describeAge(1), '1 day idle')
+    assert.equal(describeIdleDays(1), '1 day idle')
   })
 })
 

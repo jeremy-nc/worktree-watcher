@@ -15,6 +15,10 @@ const assistantText = entry({
   type: 'assistant',
   message: { content: [{ type: 'text' }] }
 })
+const askUserQuestion = entry({
+  type: 'assistant',
+  message: { content: [{ type: 'tool_use', name: 'AskUserQuestion' }] }
+})
 const userPrompt = entry({ type: 'user', message: { content: 'do the thing' } })
 const toolResult = entry({
   type: 'user',
@@ -26,8 +30,21 @@ describe('parseActivity', () => {
     assert.equal(parseActivity(assistantTool), 'running Bash')
   })
 
-  it('reports waiting once the assistant has replied', () => {
-    assert.equal(parseActivity(assistantText), 'waiting for you')
+  it('reports idle once the assistant has finished its turn', () => {
+    assert.equal(parseActivity(assistantText), 'idle')
+  })
+
+  it('reports a blocking tool as waiting for you, not as running', () => {
+    assert.equal(parseActivity(askUserQuestion), 'waiting for you · AskUserQuestion')
+  })
+
+  it('still reports an ordinary tool as running', () => {
+    const other = entry({ type: 'assistant', message: { content: [{ type: 'tool_use', name: 'Read' }] } })
+    assert.equal(parseActivity(other), 'running Read')
+  })
+
+  it('stops waiting for you once the answer comes back', () => {
+    assert.equal(parseActivity([askUserQuestion, toolResult].join('\n')), 'working')
   })
 
   it('reports thinking after a prompt', () => {
@@ -40,7 +57,7 @@ describe('parseActivity', () => {
 
   it('uses the last entry, not the first', () => {
     assert.equal(parseActivity([userPrompt, assistantTool].join('\n')), 'running Bash')
-    assert.equal(parseActivity([assistantTool, assistantText].join('\n')), 'waiting for you')
+    assert.equal(parseActivity([assistantTool, assistantText].join('\n')), 'idle')
   })
 
   it('skips entries that carry no activity', () => {

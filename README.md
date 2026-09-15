@@ -325,13 +325,35 @@ no pull request**, and as the groundwork for triggering builds.
 Each row shows what its most recent Claude session is doing:
 
 ```
-chore/dependabot-config-compliance    #415 merged · waiting for you
+chore/dependabot-config-compliance    #415 merged · idle
 feature/ARC-123                       #501 open · running Bash
+fix/ABC-456                           #502 open · waiting for you · AskUserQuestion
 ```
 
-Four words, read from the last entry of the session's transcript: `running <Tool>`,
-`working`, `thinking`, `waiting for you`. Nothing is inferred — no "probably stuck",
-no idle threshold. It reports the last thing that happened and stops there.
+Read from the last entry of the session's transcript:
+
+| Last transcript entry | Reads as |
+|---|---|
+| Assistant called a tool | `running Bash` |
+| Assistant called a **blocking** tool | `waiting for you · AskUserQuestion` |
+| Assistant finished its turn | `idle` |
+| A tool result came back | `working` |
+| You sent a prompt | `thinking` |
+
+Nothing is inferred — no "probably stuck", no idle threshold. It reports the last
+thing that happened and stops there.
+
+**`idle` is not a judgement about elapsed time.** It is the literal reading of a
+transcript whose last entry is the assistant finishing its turn: nothing is
+pending, the session is simply done until someone types again. That is why it is
+worded differently from `waiting for you`, which is reserved for the one case
+where something is genuinely outstanding on *your* side.
+
+A tool call normally means the session is busy, which is why the default wording
+is `running`. `AskUserQuestion` is the exception: the call is outstanding
+*precisely because* it is waiting for an answer, so reporting it as running points
+at the machine when the thing to look at is you. The set of blocking tools is one
+constant in `domain/activity.ts`.
 
 **No polling and no timers.** Transcripts are watched for content changes; a live
 session appends roughly once every twelve seconds and nothing at all when idle, so

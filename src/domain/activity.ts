@@ -5,14 +5,29 @@
  * nothing more. No inference about whether a session is stuck, stalled or
  * abandoned — the absence of activity is not evidence of anything, and guessing
  * at it would need a timer and would sometimes be wrong.
+ *
+ * `idle` is not an exception to that. It is not a judgement that a session has
+ * been quiet for a while; it is the literal reading of a transcript whose last
+ * entry is the assistant finishing its turn. `waiting for you` is reserved for
+ * the one case where something is genuinely outstanding on your side.
  */
 
 export interface Activity {
-  /** Plain wording: `running Bash`, `thinking`, `waiting for you`. */
+  /** Plain wording: `running Bash`, `thinking`, `idle`. */
   readonly label: string
   /** Epoch ms of the transcript's last write. */
   readonly at: number
 }
+
+/**
+ * Tools that block on a person rather than do work.
+ *
+ * A tool call normally means the session is busy, which is why the default
+ * wording is `running`. These are the exception: the call is outstanding
+ * precisely because it is waiting for an answer, so reporting them as running
+ * points at the machine when the thing to look at is you.
+ */
+const BLOCKING_TOOLS = new Set(['AskUserQuestion'])
 
 /**
  * Reads the final meaningful entry from a transcript tail.
@@ -34,7 +49,12 @@ export function parseActivity(transcriptTail: string): string | undefined {
     const content = entry.message?.content
     if (entry.type === 'assistant' && Array.isArray(content)) {
       const tool = content.find((part) => part?.type === 'tool_use' && part.name)?.name
-      return tool ? `running ${tool}` : 'waiting for you'
+      if (!tool) {
+        // The turn ended with prose. Nothing is pending — the session is simply
+        // finished until someone types again.
+        return 'idle'
+      }
+      return BLOCKING_TOOLS.has(tool) ? `waiting for you · ${tool}` : `running ${tool}`
     }
     if (entry.type === 'user') {
       // A tool result coming back means the model is about to carry on.
