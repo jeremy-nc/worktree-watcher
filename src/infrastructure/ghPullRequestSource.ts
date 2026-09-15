@@ -2,7 +2,15 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
 import { PullRequestSource } from '../application/ports'
-import { BranchRef, CheckState, PullRequest, PullRequestState, ReviewDecision } from '../domain/pullRequest'
+import {
+  BranchRef,
+  CheckState,
+  PullRequest,
+  PullRequestState,
+  ReviewDecision,
+  ReviewState,
+  resolveReview
+} from '../domain/pullRequest'
 
 const run = promisify(execFile)
 
@@ -114,6 +122,10 @@ const PR_FRAGMENT = `fragment prFields on SearchResultItemConnection {
       headRefName
       updatedAt
       reviewDecision
+      # The most recent review per reviewer. Needed because reviewDecision is
+      # null on repositories with no required-review rule, however many
+      # approvals a pull request has.
+      latestReviews(first: 20) { nodes { state } }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
     }
   }
@@ -166,6 +178,7 @@ interface RawPullRequest {
   headRefName?: string
   updatedAt?: string
   reviewDecision?: string | null
+  latestReviews?: { nodes?: Array<{ state?: string } | null> | null } | null
   commits?: { nodes?: Array<{ commit?: { statusCheckRollup?: { state?: string } | null } }> }
 }
 
@@ -181,7 +194,12 @@ function toPullRequest(node: RawPullRequest, repository: string): PullRequest | 
     url: node.url,
     state: toState(node.state, node.isDraft === true),
     checks: toChecks(node.commits?.nodes?.[0]?.commit?.statusCheckRollup?.state),
-    review: toReview(node.reviewDecision),
+    review: resolveReview(
+      toReview(node.reviewDecision),
+      (node.latestReviews?.nodes ?? [])
+        .map((review) => toReviewState(review?.state))
+        .filter((state): state is ReviewState => state !== undefined)
+    ),
     updatedAt: node.updatedAt
   }
 }
@@ -206,6 +224,23 @@ function toChecks(state: string | undefined): CheckState | undefined {
       return 'failure'
     case 'ERROR':
       return 'error'
+    case 'PENDING':
+      return 'pending'
+    default:
+      return undefined
+  }
+}
+
+function toReviewState(state: string | null | undefined): ReviewState | undefined {
+  switch (state) {
+    case 'APPROVED':
+      return 'approved'
+    case 'CHANGES_REQUESTED':
+      return 'changes-requested'
+    case 'COMMENTED':
+      return 'commented'
+    case 'DISMISSED':
+      return 'dismissed'
     case 'PENDING':
       return 'pending'
     default:

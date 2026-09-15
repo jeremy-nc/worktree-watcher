@@ -50,12 +50,39 @@ Each worktree row shows the pull request for its branch:
 ```
 ▾ feed-importer                                    3 worktrees
      dependabot/gradle/minor-and-patch-8e69e0ae7a    #627 closed
-     dependabot/terraform/infrastructure/google-8.1.0 #659 merged
+     fix/ABC-984-web-client-5xx                      #469 open · approved
+     fix/ABC-983-partition-writer                    #468 open · review required
 ```
 
 Hover for the title, checks, review decision and a link; right-click for **Open
 Pull Request**. A merged or closed PR means nothing is left to push, which the
 tooltip says plainly — it is the signal that a worktree can go.
+
+### Why the review needs two sources
+
+`reviewDecision` is the obvious field, and on its own it is wrong for half our
+repositories. It is **not** "has anyone approved this": it is GitHub's verdict
+relative to *required* reviewers, so a repository with no required-review rule
+reports `null` however many approvals a pull request collects. A PR sitting there
+approved reads as plain `open`.
+
+So both are read, and `reviewDecision` wins where it exists:
+
+| | `reviewDecision` | `latestReviews` | Row |
+|---|---|---|---|
+| Branch protection on | `REVIEW_REQUIRED` | — | `review required` |
+| No required-review rule | `null` | one `APPROVED` | `approved` |
+| Mixed opinions | `null` | `APPROVED` + `CHANGES_REQUESTED` | `changes requested` |
+
+`latestReviews` is the most recent review *per reviewer*, so a dismissed or
+superseded one does not linger. Among them, changes-requested beats approved —
+the two coexist from different reviewers and the blocking one is the news.
+`commented`, `dismissed` and `pending` carry no verdict at all, which matters
+because bot reviewers comment constantly.
+
+The review disappears from the row once a PR is merged or closed: the outcome is
+settled, so how it got there is history and only costs space beside the branch
+name. It costs no extra request — one more field on the existing query.
 
 **Auth rides the `gh` CLI's own keyring token**, so there is nothing to configure
 and no token stored in settings. If `gh` is missing or signed out the feature goes

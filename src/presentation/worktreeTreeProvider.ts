@@ -13,7 +13,7 @@ import {
 import { Repository, Worktree } from '../domain/model'
 import { Activity } from '../domain/activity'
 import { BranchBuilds, buildSummary, buildTypeLabel } from '../domain/build'
-import { isFinished, PullRequest, pullRequestSummary } from '../domain/pullRequest'
+import { isFinished, PullRequest, pullRequestSummary, reviewSummary } from '../domain/pullRequest'
 
 /** Looks up what a session is doing, if the feature is on. */
 export interface ActivityLookup {
@@ -211,6 +211,7 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
     item.description = [
       worktreeDescription(worktree, this.home),
       pullRequest && pullRequestSummary(pullRequest),
+      pullRequest && reviewSummary(pullRequest),
       branchBuilds && buildSummary(branchBuilds),
       activity?.label
     ]

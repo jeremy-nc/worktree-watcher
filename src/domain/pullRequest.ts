@@ -9,6 +9,9 @@ export type PullRequestState = 'open' | 'draft' | 'merged' | 'closed'
 export type CheckState = 'success' | 'failure' | 'pending' | 'error'
 export type ReviewDecision = 'approved' | 'changes-requested' | 'review-required'
 
+/** One reviewer's most recent verdict on a pull request. */
+export type ReviewState = 'approved' | 'changes-requested' | 'commented' | 'dismissed' | 'pending'
+
 export interface PullRequest {
   readonly repository: string
   readonly branch: string
@@ -34,6 +37,48 @@ export function pullRequestKey(repository: string, branch: string): string {
 /** Short right-hand text: `#415 merged`, `#248 draft`. */
 export function pullRequestSummary(pullRequest: PullRequest): string {
   return `#${pullRequest.number} ${pullRequest.state}`
+}
+
+/**
+ * The review signal for a pull request, from GitHub's two disagreeing sources.
+ *
+ * `reviewDecision` is **not** "has anyone approved this". It is GitHub's verdict
+ * relative to *required* reviewers, so on a repository with no required-review
+ * rule it stays `null` however many approvals a pull request collects. Trusting
+ * it alone silently drops every approval on such repositories.
+ *
+ * So it is preferred when present — it is the authoritative answer where branch
+ * protection defines one — and the individual reviews are the fallback where it
+ * does not.
+ *
+ * Among individual reviews, changes-requested beats approved: the two can coexist
+ * from different reviewers, and the blocking one is the news. `commented`,
+ * `dismissed` and `pending` carry no verdict and are ignored.
+ */
+export function resolveReview(
+  decision: ReviewDecision | undefined,
+  latestReviews: readonly ReviewState[]
+): ReviewDecision | undefined {
+  if (decision) {
+    return decision
+  }
+  if (latestReviews.includes('changes-requested')) {
+    return 'changes-requested'
+  }
+  return latestReviews.includes('approved') ? 'approved' : undefined
+}
+
+/**
+ * Review wording for a row, or undefined when it should not be shown.
+ *
+ * Suppressed once a pull request is merged or closed: the outcome is settled, so
+ * how it was reviewed is history and only costs space beside the branch name.
+ */
+export function reviewSummary(pullRequest: PullRequest): string | undefined {
+  if (!pullRequest.review || isFinished(pullRequest)) {
+    return undefined
+  }
+  return pullRequest.review.replace('-', ' ')
 }
 
 /**

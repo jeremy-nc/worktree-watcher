@@ -6,7 +6,11 @@ import {
   isFinished,
   preferredPullRequest,
   PullRequest,
-  pullRequestSummary
+  PullRequestState,
+  pullRequestSummary,
+  resolveReview,
+  ReviewDecision,
+  reviewSummary
 } from '../domain/pullRequest'
 import { buildQuery } from '../infrastructure/ghPullRequestSource'
 
@@ -132,5 +136,56 @@ describe('buildQuery', () => {
 
   it('is undefined when there is nothing to ask about', () => {
     assert.equal(buildQuery([], 'Org'), undefined)
+  })
+})
+
+describe('resolveReview', () => {
+  it('trusts reviewDecision when GitHub gives one', () => {
+    assert.equal(resolveReview('approved', []), 'approved')
+    assert.equal(resolveReview('changes-requested', ['approved']), 'changes-requested')
+  })
+
+  it('falls back to an approval when reviewDecision is null', () => {
+    // A repository with no required-review rule reports null however many
+    // approvals the pull request has collected.
+    assert.equal(resolveReview(undefined, ['commented', 'commented', 'approved']), 'approved')
+  })
+
+  it('lets changes-requested beat an approval from someone else', () => {
+    assert.equal(resolveReview(undefined, ['approved', 'changes-requested']), 'changes-requested')
+  })
+
+  it('treats comments, dismissals and pending reviews as no verdict', () => {
+    assert.equal(resolveReview(undefined, ['commented', 'dismissed', 'pending']), undefined)
+  })
+
+  it('is undefined when nobody has reviewed', () => {
+    assert.equal(resolveReview(undefined, []), undefined)
+  })
+})
+
+describe('reviewSummary', () => {
+  const open = (review?: ReviewDecision, state: PullRequestState = 'open'): PullRequest => ({
+    repository: 'proptrack-integration',
+    branch: 'fix/ABC-984',
+    number: 469,
+    title: 'Retry transient 5xx',
+    url: 'https://github.com/acme/proptrack-integration/pull/469',
+    state,
+    review
+  })
+
+  it('reads as plain words beside the branch', () => {
+    assert.equal(reviewSummary(open('approved')), 'approved')
+    assert.equal(reviewSummary(open('changes-requested')), 'changes requested')
+  })
+
+  it('says nothing when nobody has reviewed', () => {
+    assert.equal(reviewSummary(open(undefined)), undefined)
+  })
+
+  it('drops the review once the pull request is settled', () => {
+    assert.equal(reviewSummary(open('approved', 'merged')), undefined)
+    assert.equal(reviewSummary(open('approved', 'closed')), undefined)
   })
 })
