@@ -7,6 +7,7 @@ import {
   authorIcon,
   candidateDescription,
   describeAuthor,
+  describeReviewQueue,
   planCheckouts,
   reviewQualifier,
   reviewRequestQuery,
@@ -92,6 +93,20 @@ describe('authorIcon', () => {
 
   it('assumes a person when GitHub did not say', () => {
     assert.equal(authorIcon(pr({ authorIsBot: undefined })), '$(account)')
+  })
+})
+
+describe('describeReviewQueue', () => {
+  it('reads as plain text beside the title', () => {
+    assert.equal(describeReviewQueue(5), '5 PRs awaiting review')
+  })
+
+  it('says PR, not PRs, for one', () => {
+    assert.equal(describeReviewQueue(1), '1 PR awaiting review')
+  })
+
+  it('says nothing at zero rather than printing a nought', () => {
+    assert.equal(describeReviewQueue(0), undefined)
   })
 })
 
@@ -267,6 +282,50 @@ describe('ReviewRequestStore', () => {
     assert.equal(store.current.status, 'disabled')
     assert.equal(store.count, 0)
     handle.dispose()
+    store.dispose()
+  })
+
+  it('serves the list from the poll instead of searching again', async () => {
+    let calls = 0
+    const store = new ReviewRequestStore(
+      {
+        fetch: async () => {
+          calls += 1
+          return [pr()]
+        }
+      },
+      settings,
+      logger
+    )
+    const handle = store.activate()
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(calls, 1)
+
+    const first = await store.ensure()
+    const second = await store.ensure()
+    assert.equal(calls, 1, 'opening the list must not repeat the search')
+    assert.equal(first.length, 1)
+    assert.equal(second.length, 1)
+    handle.dispose()
+    store.dispose()
+  })
+
+  it('fetches on demand when nothing has been polled yet', async () => {
+    let calls = 0
+    const store = new ReviewRequestStore(
+      {
+        fetch: async () => {
+          calls += 1
+          return [pr()]
+        }
+      },
+      settings,
+      logger
+    )
+    // Never activated, so the panel was never on screen to poll.
+    const found = await store.ensure()
+    assert.equal(calls, 1)
+    assert.equal(found.length, 1)
     store.dispose()
   })
 

@@ -32,7 +32,9 @@ import {
   CheckoutCandidate,
   CheckoutOutcome,
   QueryOptions,
+  ReviewRequest,
   authorIcon,
+  describeReviewQueue,
   candidateDescription as reviewRequestDescription,
   planCheckouts,
   summariseCheckouts
@@ -90,7 +92,8 @@ export function activate(context: vscode.ExtensionContext): void {
     logger
   )
 
-  // One search per cycle, independent of worktree count, feeding the view badge.
+  // One search per cycle, independent of worktree count. Feeds the header text,
+  // and the checkout list reads straight off it rather than searching again.
   const reviewRequests = new ReviewRequestStore(
     {
       fetch: () =>
@@ -164,11 +167,10 @@ export function activate(context: vscode.ExtensionContext): void {
     tree.message = state.status === 'error' ? `Scan failed: ${state.error}` : undefined
   })
 
-  // VS Code has no way to put a number on a title-bar button, so the count goes
-  // on the view itself, which is the nearest thing it does support.
+  // Text beside the view title rather than a numeric badge: the number alone
+  // said nothing about what it counted, and read as a worktree count.
   reviewRequests.onDidChange((state) => {
-    const count = state.pullRequests.length
-    tree.badge = count > 0 ? { value: count, tooltip: reviewBadgeTooltip(count) } : undefined
+    tree.description = describeReviewQueue(state.pullRequests.length)
   })
 
   context.subscriptions.push(
@@ -290,7 +292,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('worktreeWatcher.checkOutReviewRequests', async () => {
       await checkOutReviewRequests({
-        source: new GhReviewRequestSource(gitHubSettings.organisation, reviewQueryOptions(settings)),
+        // Reuses the polled result, so the list opens instantly instead of
+        // repeating a search the store has already run.
+        source: reviewRequests,
         creator: new GitWorktreeCreator(),
         rootPath: settings.rootPath,
         organisation: gitHubSettings.organisation,
@@ -469,7 +473,7 @@ async function triggerDeploy(
  * for each one.
  */
 async function checkOutReviewRequests(deps: {
-  source: GhReviewRequestSource
+  source: { ensure(): Promise<readonly ReviewRequest[]> }
   creator: GitWorktreeCreator
   rootPath: string
   organisation: string
@@ -485,12 +489,14 @@ async function checkOutReviewRequests(deps: {
 
   let pullRequests
   try {
+    // Usually resolves from the polled result without touching the network, so
+    // the progress notification never appears.
     pullRequests = await vscode.window.withProgress(
       {
-        location: vscode.ProgressLocation.Notification,
+        location: vscode.ProgressLocation.Window,
         title: 'Finding pull requests awaiting your review…'
       },
-      () => deps.source.fetch()
+      () => deps.source.ensure()
     )
   } catch (error) {
     void vscode.window.showErrorMessage(`Could not reach GitHub: ${describeError(error)}`)
@@ -908,10 +914,6 @@ async function deleteBranch(
       }
     }
   }
-}
-
-function reviewBadgeTooltip(count: number): string {
-  return `${count} pull request${count === 1 ? '' : 's'} awaiting your review`
 }
 
 /** Reads the review-request filters out of settings in one place. */

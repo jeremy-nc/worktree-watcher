@@ -235,6 +235,19 @@ function describeAgeOf(createdAt: string | undefined, now: number): string | und
   return `${days} day${days === 1 ? '' : 's'} old`
 }
 
+/**
+ * Header text for the panel: `5 PRs awaiting review`.
+ *
+ * Undefined at zero, which removes it rather than printing a nought. An empty
+ * queue is the normal state and does not need announcing.
+ */
+export function describeReviewQueue(count: number): string | undefined {
+  if (count <= 0) {
+    return undefined
+  }
+  return `${count} PR${count === 1 ? '' : 's'} awaiting review`
+}
+
 /** Outcome of one checkout, so partial failure can be reported honestly. */
 export interface CheckoutOutcome {
   readonly label: string

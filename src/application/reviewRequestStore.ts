@@ -18,16 +18,17 @@ export interface ReviewRequestFetcher {
 }
 
 /**
- * Keeps a count of the pull requests waiting on your review, for the badge.
+ * Keeps the set of pull requests waiting on your review.
  *
  * Separate from `PullRequestStore` because it asks a different question. That one
  * starts from the worktrees you have and looks up their pull requests; this one
  * knows nothing about worktrees and asks what is waiting on you — most of which
  * has no worktree at all.
  *
- * A badge has to be right without being asked for, so unlike the checkout flow
- * this does poll. It is one search per cycle regardless of how many repositories
- * exist, and only while the panel is on screen.
+ * Header text has to be right without being asked for, so this polls. It is one
+ * search per cycle regardless of how many repositories exist, and only while the
+ * panel is on screen. Opening the checkout list then reads this result rather
+ * than repeating the search.
  */
 export class ReviewRequestStore implements Disposable {
   private readonly changed = new Emitter<ReviewRequestState>()
@@ -73,13 +74,37 @@ export class ReviewRequestStore implements Disposable {
     void this.poll()
   }
 
+  /**
+   * The current list, fetching only if there is not already one.
+   *
+   * The polling that keeps the header text honest has already paid for this
+   * query, so opening the list should be instant. Waiting on a second identical
+   * search — several seconds against GitHub — while holding the answer in memory
+   * is the kind of thing that makes a button feel broken.
+   *
+   * Falls through to a live fetch only when nothing has been polled yet: the
+   * panel was hidden, the first poll is still in flight, or the last one failed.
+   */
+  async ensure(): Promise<readonly ReviewRequest[]> {
+    if (this.state.status === 'ready') {
+      return this.state.pullRequests
+    }
+    // `force`, because polling stops when the panel is hidden and an explicit
+    // click must still answer.
+    await this.poll(true)
+    if (this.state.status === 'error') {
+      throw new Error(this.state.error ?? 'could not reach GitHub')
+    }
+    return this.state.pullRequests
+  }
+
   dispose(): void {
     this.stop()
     this.changed.dispose()
   }
 
-  private async poll(): Promise<void> {
-    if (this.consumers === 0 || this.inFlight) {
+  private async poll(force = false): Promise<void> {
+    if ((this.consumers === 0 && !force) || this.inFlight) {
       return
     }
     if (!this.settings.enabled || !this.settings.organisation) {
@@ -95,7 +120,7 @@ export class ReviewRequestStore implements Disposable {
       this.logger.info(`review requests: ${pullRequests.length} awaiting you`)
     } catch (error) {
       this.failures += 1
-      // Keep the last good count rather than blanking the badge on a blip.
+      // Keep the last good result rather than blanking the header on a blip.
       this.publish({
         ...this.state,
         status: 'error',

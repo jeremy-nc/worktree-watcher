@@ -449,10 +449,15 @@ colleague's pull request needs a checkout for exactly the same reason, and
 filtering to bots would hide the ones that matter most. The author is shown on
 each row so the two are easy to tell apart.
 
-**A count badge** sits on the Worktrees view showing how many are waiting. VS Code
-has no way to put a number on a title-bar button, so the badge goes on the view,
-which is the nearest thing it supports. It refreshes on the GitHub poll cycle and
-immediately after a checkout.
+**The count sits beside the panel title** as `5 PRs awaiting review`, via
+`TreeView.description`. A numeric badge was tried first and removed: a bare number
+on a panel called Worktrees reads as a worktree count, and VS Code offers no way
+to put one on the button itself. The text says what it counts.
+
+**Clicking the button does not search.** The same poll that keeps that text honest
+holds the answer, so the list opens from memory. It only hits the network when
+nothing has been polled yet — the panel has never been open, or the last poll
+failed.
 
 **A codicon marks who opened it** — `$(robot)` against `$(account)`, taken from
 GitHub typing the author as `Bot` rather than `User`. A bot login is otherwise
