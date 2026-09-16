@@ -116,9 +116,17 @@ export class VscodeSettings implements Settings {
   }
 
   get reviewScope(): ReviewScope {
-    return this.read<string>('reviewRequests.scope', DEFAULT_REVIEW_SCOPE) === 'personal'
-      ? 'personal'
-      : 'team'
+    return this.read<string>('reviewRequests.scope', DEFAULT_REVIEW_SCOPE) === 'team'
+      ? 'team'
+      : 'personal'
+  }
+
+  get excludeDraftReviews(): boolean {
+    return this.read<boolean>('reviewRequests.excludeDrafts', true)
+  }
+
+  get excludeReviewedByMe(): boolean {
+    return this.read<boolean>('reviewRequests.excludeReviewed', true)
   }
 
   onDidChange(listener: () => void): Disposable {

@@ -21,37 +21,77 @@ export interface ReviewRequest {
   readonly url: string
   /** Login of whoever opened it. Bots report a bare login, e.g. `dependabot`. */
   readonly author?: string
+  /** True when GitHub typed the author as a Bot rather than a User. */
+  readonly authorIsBot?: boolean
+  readonly isDraft?: boolean
   readonly createdAt?: string
+}
+
+/** Codicon marking who opened a pull request, so bots read at a glance. */
+export function authorIcon(pullRequest: ReviewRequest): string {
+  return pullRequest.authorIsBot ? '$(robot)' : '$(account)'
 }
 
 /**
  * Whose review request counts.
  *
  * GitHub draws a line the obvious query does not: `review-requested:@me` includes
- * pull requests where a *team* you belong to was asked, `user-review-requested:@me`
- * only those naming you personally. Where CODEOWNERS routes reviews to squad
- * teams, the personal form matches nothing at all — so this is a choice, not a
- * detail to be guessed at.
+ * pull requests where *any team* you belong to was asked, `user-review-requested:@me`
+ * only those naming you personally.
+ *
+ * The gap is not marginal. Belonging to one broad team — a `cloud-services` that
+ * CODEOWNERS names on most repositories — means the team-inclusive form returns
+ * the whole squad's queue, not yours.
  */
 export type ReviewScope = 'team' | 'personal'
 
-export const DEFAULT_REVIEW_SCOPE: ReviewScope = 'team'
+/**
+ * Personal by default, which is the opposite of what it looks like it should be.
+ *
+ * Measured on this organisation: the team-inclusive form returns 33 pull
+ * requests, 28 of them requested from one broad team. The personal form returns
+ * the 5 that actually name you. A list where six in seven rows are someone
+ * else's problem is a list nobody reads.
+ */
+export const DEFAULT_REVIEW_SCOPE: ReviewScope = 'personal'
 
 export function reviewQualifier(scope: ReviewScope): string {
   return scope === 'personal' ? 'user-review-requested:@me' : 'review-requested:@me'
 }
 
-/** Search for open pull requests awaiting the signed-in user's review. */
-export function reviewRequestQuery(organisation: string, scope: ReviewScope): string {
-  return [
+export interface QueryOptions {
+  readonly scope: ReviewScope
+  /** Drop pull requests still marked draft. */
+  readonly excludeDrafts: boolean
+  /** Drop pull requests you have already reviewed. */
+  readonly excludeReviewed: boolean
+}
+
+/**
+ * Search for open pull requests awaiting the signed-in user's review.
+ *
+ * `-reviewed-by:@me` is close to a no-op in normal use, because submitting a
+ * review clears your pending request — the two sets barely overlap. It earns its
+ * place in the one case where they do: a review re-requested after you had
+ * already looked, which is otherwise indistinguishable from a fresh one.
+ */
+export function reviewRequestQuery(organisation: string, options: QueryOptions): string {
+  const parts = [
     'is:open',
     'is:pr',
     `org:${organisation}`,
-    reviewQualifier(scope),
+    reviewQualifier(options.scope),
     // Archived repositories still return pull requests, and a worktree for one
     // cannot be pushed anywhere useful.
     'archived:false'
-  ].join(' ')
+  ]
+  if (options.excludeDrafts) {
+    parts.push('draft:false')
+  }
+  if (options.excludeReviewed) {
+    parts.push('-reviewed-by:@me')
+  }
+  return parts.join(' ')
 }
 
 /**

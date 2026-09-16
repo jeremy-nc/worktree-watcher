@@ -1,0 +1,132 @@
+import { ReviewRequest } from '../domain/reviewRequests'
+import { Emitter } from './emitter'
+import { Disposable, GitHubSettings, Logger } from './ports'
+
+/** Failures back off rather than hammering a rate-limited or offline API. */
+const MAX_BACKOFF_MS = 30 * 60_000
+
+export interface ReviewRequestState {
+  readonly status: 'idle' | 'disabled' | 'loading' | 'ready' | 'error'
+  readonly pullRequests: readonly ReviewRequest[]
+  readonly fetchedAt?: number
+  readonly error?: string
+}
+
+/** What the store needs from GitHub. Narrow, so tests need no `gh`. */
+export interface ReviewRequestFetcher {
+  fetch(): Promise<readonly ReviewRequest[]>
+}
+
+/**
+ * Keeps a count of the pull requests waiting on your review, for the badge.
+ *
+ * Separate from `PullRequestStore` because it asks a different question. That one
+ * starts from the worktrees you have and looks up their pull requests; this one
+ * knows nothing about worktrees and asks what is waiting on you — most of which
+ * has no worktree at all.
+ *
+ * A badge has to be right without being asked for, so unlike the checkout flow
+ * this does poll. It is one search per cycle regardless of how many repositories
+ * exist, and only while the panel is on screen.
+ */
+export class ReviewRequestStore implements Disposable {
+  private readonly changed = new Emitter<ReviewRequestState>()
+  readonly onDidChange = this.changed.on.bind(this.changed)
+
+  private state: ReviewRequestState = { status: 'idle', pullRequests: [] }
+  private timer?: ReturnType<typeof setTimeout>
+  private consumers = 0
+  private inFlight = false
+  private failures = 0
+  private settingsListener?: Disposable
+
+  constructor(
+    private readonly source: ReviewRequestFetcher,
+    private readonly settings: GitHubSettings,
+    private readonly logger: Logger
+  ) {}
+
+  get current(): ReviewRequestState {
+    return this.state
+  }
+
+  get count(): number {
+    return this.state.pullRequests.length
+  }
+
+  activate(): Disposable {
+    if (++this.consumers === 1) {
+      this.settingsListener = this.settings.onDidChange(() => void this.poll())
+      void this.poll()
+    }
+    return {
+      dispose: () => {
+        if (--this.consumers === 0) {
+          this.stop()
+        }
+      }
+    }
+  }
+
+  /** Re-reads immediately — after checking some out, the count has changed. */
+  refresh(): void {
+    void this.poll()
+  }
+
+  dispose(): void {
+    this.stop()
+    this.changed.dispose()
+  }
+
+  private async poll(): Promise<void> {
+    if (this.consumers === 0 || this.inFlight) {
+      return
+    }
+    if (!this.settings.enabled || !this.settings.organisation) {
+      this.publish({ status: 'disabled', pullRequests: [] })
+      return
+    }
+
+    this.inFlight = true
+    try {
+      const pullRequests = await this.source.fetch()
+      this.failures = 0
+      this.publish({ status: 'ready', pullRequests, fetchedAt: Date.now() })
+      this.logger.info(`review requests: ${pullRequests.length} awaiting you`)
+    } catch (error) {
+      this.failures += 1
+      // Keep the last good count rather than blanking the badge on a blip.
+      this.publish({
+        ...this.state,
+        status: 'error',
+        error: error instanceof Error ? error.message : String(error)
+      })
+      this.logger.info(`review requests failed: ${this.state.error}`)
+    } finally {
+      this.inFlight = false
+      this.schedule()
+    }
+  }
+
+  private schedule(): void {
+    clearTimeout(this.timer)
+    if (this.consumers === 0) {
+      return
+    }
+    const base = Math.max(1, this.settings.pollMinutes) * 60_000
+    const delay = Math.min(base * 4 ** Math.min(this.failures, 4), MAX_BACKOFF_MS)
+    this.timer = setTimeout(() => void this.poll(), this.failures > 0 ? delay : base)
+  }
+
+  private publish(state: ReviewRequestState): void {
+    this.state = state
+    this.changed.fire(state)
+  }
+
+  private stop(): void {
+    clearTimeout(this.timer)
+    this.timer = undefined
+    this.settingsListener?.dispose()
+    this.settingsListener = undefined
+  }
+}

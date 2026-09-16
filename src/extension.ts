@@ -4,6 +4,7 @@ import * as vscode from 'vscode'
 
 import { ActivityStore } from './application/activityStore'
 import { PullRequestStore } from './application/pullRequestStore'
+import { ReviewRequestStore } from './application/reviewRequestStore'
 import { WorktreeStore } from './application/worktreeStore'
 import { ClaudeSession, Repository, WORKTREES_SUFFIX } from './domain/model'
 import { BranchRef, PullRequest } from './domain/pullRequest'
@@ -30,6 +31,8 @@ import {
 import {
   CheckoutCandidate,
   CheckoutOutcome,
+  QueryOptions,
+  authorIcon,
   candidateDescription as reviewRequestDescription,
   planCheckouts,
   summariseCheckouts
@@ -87,6 +90,19 @@ export function activate(context: vscode.ExtensionContext): void {
     logger
   )
 
+  // One search per cycle, independent of worktree count, feeding the view badge.
+  const reviewRequests = new ReviewRequestStore(
+    {
+      fetch: () =>
+        new GhReviewRequestSource(
+          gitHubSettings.organisation,
+          reviewQueryOptions(settings)
+        ).fetch()
+    },
+    gitHubSettings,
+    logger
+  )
+
   const remover = new GitWorktreeRemover()
   const activities = new ActivityStore(
     new TranscriptActivityReader(transcriptIndex),
@@ -138,13 +154,21 @@ export function activate(context: vscode.ExtensionContext): void {
       store.activate(),
       pullRequests.activate(),
       activities.activate(),
-      builds.activate()
+      builds.activate(),
+      reviewRequests.activate()
     ]
     return new vscode.Disposable(() => running.forEach((item) => item.dispose()))
   }
 
   store.onDidChange((state) => {
     tree.message = state.status === 'error' ? `Scan failed: ${state.error}` : undefined
+  })
+
+  // VS Code has no way to put a number on a title-bar button, so the count goes
+  // on the view itself, which is the nearest thing it does support.
+  reviewRequests.onDidChange((state) => {
+    const count = state.pullRequests.length
+    tree.badge = count > 0 ? { value: count, tooltip: reviewBadgeTooltip(count) } : undefined
   })
 
   context.subscriptions.push(
@@ -155,6 +179,7 @@ export function activate(context: vscode.ExtensionContext): void {
     pullRequests,
     activities,
     builds,
+    reviewRequests,
     iap,
     vscode.authentication.registerAuthenticationProvider(
       IAP_AUTH_PROVIDER_ID,
@@ -265,12 +290,16 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     vscode.commands.registerCommand('worktreeWatcher.checkOutReviewRequests', async () => {
       await checkOutReviewRequests({
-        source: new GhReviewRequestSource(gitHubSettings.organisation, settings.reviewScope),
+        source: new GhReviewRequestSource(gitHubSettings.organisation, reviewQueryOptions(settings)),
         creator: new GitWorktreeCreator(),
         rootPath: settings.rootPath,
         organisation: gitHubSettings.organisation,
         logger,
-        onCreated: () => store.refresh()
+        onCreated: () => {
+          store.refresh()
+          // One fewer waiting on you, so the badge should say so now.
+          reviewRequests.refresh()
+        }
       })
     }),
     vscode.commands.registerCommand('worktreeWatcher.cleanUpWorktrees', async (node?: Node) => {
@@ -499,7 +528,9 @@ async function checkOutReviewRequests(deps: {
   const now = Date.now()
   const picked = await vscode.window.showQuickPick(
     candidates.map((candidate) => ({
-      label: candidate.pullRequest.title,
+      // The codicon marks bot against human at a glance, which is the first
+      // thing you sort a review queue by.
+      label: `${authorIcon(candidate.pullRequest)}  ${candidate.pullRequest.title}`,
       description: reviewRequestDescription(candidate, now),
       detail: candidate.warning ?? candidate.pullRequest.branch,
       // Only ones that can actually be created start ticked.
@@ -876,6 +907,19 @@ async function deleteBranch(
         void vscode.window.showWarningMessage(`Branch not deleted: ${describeError(forceError)}`)
       }
     }
+  }
+}
+
+function reviewBadgeTooltip(count: number): string {
+  return `${count} pull request${count === 1 ? '' : 's'} awaiting your review`
+}
+
+/** Reads the review-request filters out of settings in one place. */
+function reviewQueryOptions(settings: VscodeSettings): QueryOptions {
+  return {
+    scope: settings.reviewScope,
+    excludeDrafts: settings.excludeDraftReviews,
+    excludeReviewed: settings.excludeReviewedByMe
   }
 }
 

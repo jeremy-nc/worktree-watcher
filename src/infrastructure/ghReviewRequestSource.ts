@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 
-import { ReviewRequest, ReviewScope, reviewRequestQuery } from '../domain/reviewRequests'
+import { QueryOptions, ReviewRequest, reviewRequestQuery } from '../domain/reviewRequests'
 
 const run = promisify(execFile)
 const REQUEST_TIMEOUT_MS = 30_000
@@ -24,7 +24,7 @@ const PAGE_SIZE = 100
 export class GhReviewRequestSource {
   constructor(
     private readonly organisation: string,
-    private readonly scope: ReviewScope
+    private readonly options: QueryOptions
   ) {}
 
   async fetch(): Promise<readonly ReviewRequest[]> {
@@ -38,7 +38,7 @@ export class GhReviewRequestSource {
         'api',
         'graphql',
         '-f',
-        `q=${reviewRequestQuery(this.organisation, this.scope)}`,
+        `q=${reviewRequestQuery(this.organisation, this.options)}`,
         '-f',
         `query=${SEARCH}`
       ],
@@ -64,7 +64,8 @@ const SEARCH = `query($q: String!) {
         url
         headRefName
         createdAt
-        author { login }
+        isDraft
+        author { login __typename }
         repository { name }
       }
     }
@@ -77,7 +78,8 @@ interface RawPullRequest {
   url?: string
   headRefName?: string
   createdAt?: string
-  author?: { login?: string } | null
+  isDraft?: boolean
+  author?: { login?: string; __typename?: string } | null
   repository?: { name?: string }
 }
 
@@ -97,6 +99,10 @@ function toPullRequest(node: RawPullRequest): ReviewRequest | undefined {
     branch: node.headRefName,
     url: node.url,
     author: node.author?.login,
+    // GitHub types an app's author as Bot, which is the only reliable signal —
+    // a bot login is otherwise indistinguishable from a person's.
+    authorIsBot: node.author?.__typename === 'Bot',
+    isDraft: node.isDraft === true,
     createdAt: node.createdAt
   }
 }

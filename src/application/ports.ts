@@ -43,6 +43,8 @@ export interface Settings {
   readonly staleDays: number
   /** Whose review requests to list. */
   readonly reviewScope: ReviewScope
+  readonly excludeDraftReviews: boolean
+  readonly excludeReviewedByMe: boolean
   onDidChange(listener: () => void): Disposable
 }
 

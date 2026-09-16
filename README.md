@@ -109,7 +109,9 @@ timer alone.
 | `worktreeWatcher.github.enabled` | `true` | Turn the feature off entirely. |
 | `worktreeWatcher.github.organisation` | `acme` | Org that owns the repos. |
 | `worktreeWatcher.github.pollMinutes` | `5` | Minutes between polls. |
-| `worktreeWatcher.reviewRequests.scope` | `team` | `team` includes requests to your teams; `personal` only names you. |
+| `worktreeWatcher.reviewRequests.scope` | `personal` | `personal` names only you; `team` also matches any team you are in. |
+| `worktreeWatcher.reviewRequests.excludeDrafts` | `true` | Leave out drafts. |
+| `worktreeWatcher.reviewRequests.excludeReviewed` | `true` | Leave out ones you have already reviewed. |
 
 Branch and repository names are validated against `^[A-Za-z0-9._\-/]+$` before
 going into the query — anything else is dropped rather than escaped, since a git
@@ -447,19 +449,42 @@ colleague's pull request needs a checkout for exactly the same reason, and
 filtering to bots would hide the ones that matter most. The author is shown on
 each row so the two are easy to tell apart.
 
+**A count badge** sits on the Worktrees view showing how many are waiting. VS Code
+has no way to put a number on a title-bar button, so the badge goes on the view,
+which is the nearest thing it supports. It refreshes on the GitHub poll cycle and
+immediately after a checkout.
+
+**A codicon marks who opened it** — `$(robot)` against `$(account)`, taken from
+GitHub typing the author as `Bot` rather than `User`. A bot login is otherwise
+indistinguishable from a person's, and bot-versus-human is the first way anyone
+sorts a review queue.
+
 ### Team requests, or only yours
 
 GitHub draws a line the obvious query does not:
 
 | Qualifier | Matches |
 |---|---|
-| `review-requested:@me` | including where a **team** you belong to was asked |
-| `user-review-requested:@me` | only pull requests naming **you** personally |
+| `user-review-requested:@me` | pull requests naming **you** personally |
+| `review-requested:@me` | those, **plus** any where a team you belong to was asked |
 
-Where CODEOWNERS routes reviews to squad teams, the personal form matches
-**nothing at all** — measured on this organisation, 33 against 0. The default is
-therefore the team-inclusive form; `worktreeWatcher.reviewRequests.scope` narrows
-it.
+The gap is not marginal. Measured on this organisation: **33** against **5**, with
+**28 of the 33** requested from a single broad `cloud-services` team. A list where
+six rows in seven are someone else's problem is a list nobody reads, so the default
+is the personal form and `worktreeWatcher.reviewRequests.scope` opens it up.
+
+### Two filters that look redundant
+
+| Setting | Default | |
+|---|---|---|
+| `reviewRequests.excludeDrafts` | `true` | adds `draft:false` |
+| `reviewRequests.excludeReviewed` | `true` | adds `-reviewed-by:@me` |
+
+The second changes almost nothing on its own, and that is expected: submitting a
+review **clears your pending request**, so the two sets barely overlap — measured
+here, they do not overlap at all. It earns its place in the one case where they
+do, a review **re-requested** after you had already looked, which is otherwise
+indistinguishable from a fresh one.
 
 ### Creating the worktree
 

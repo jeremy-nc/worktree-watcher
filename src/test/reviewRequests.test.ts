@@ -2,7 +2,9 @@ import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
 import {
+  DEFAULT_REVIEW_SCOPE,
   ReviewRequest,
+  authorIcon,
   candidateDescription,
   describeAuthor,
   planCheckouts,
@@ -12,6 +14,7 @@ import {
   worktreePathFor,
   worktreesContainerFor
 } from '../domain/reviewRequests'
+import { ReviewRequestStore } from '../application/reviewRequestStore'
 
 const NOW = Date.UTC(2026, 8, 16)
 const CLONED = '/Users/dev/Code/widget-service'
@@ -41,9 +44,11 @@ describe('reviewQualifier', () => {
   })
 })
 
+const QUERY = { scope: 'team' as const, excludeDrafts: false, excludeReviewed: false }
+
 describe('reviewRequestQuery', () => {
   it('asks for open pull requests awaiting review in the organisation', () => {
-    const query = reviewRequestQuery('acme', 'team')
+    const query = reviewRequestQuery('acme', QUERY)
     assert.match(query, /is:open/)
     assert.match(query, /is:pr/)
     assert.match(query, /org:acme/)
@@ -51,15 +56,48 @@ describe('reviewRequestQuery', () => {
   })
 
   it('does not filter by author, so human pull requests come through too', () => {
-    assert.doesNotMatch(reviewRequestQuery('acme', 'team'), /author:/)
+    assert.doesNotMatch(reviewRequestQuery('acme', QUERY), /author:/)
   })
 
   it('excludes archived repositories, whose worktrees could not be pushed', () => {
-    assert.match(reviewRequestQuery('acme', 'team'), /archived:false/)
+    assert.match(reviewRequestQuery('acme', QUERY), /archived:false/)
   })
 
   it('carries the personal qualifier through', () => {
-    assert.match(reviewRequestQuery('acme', 'personal'), /user-review-requested:@me/)
+    assert.match(
+      reviewRequestQuery('acme', { ...QUERY, scope: 'personal' }),
+      /user-review-requested:@me/
+    )
+  })
+
+  it('excludes drafts only when asked', () => {
+    assert.doesNotMatch(reviewRequestQuery('acme', QUERY), /draft:false/)
+    assert.match(reviewRequestQuery('acme', { ...QUERY, excludeDrafts: true }), /draft:false/)
+  })
+
+  it('excludes what you have already reviewed only when asked', () => {
+    assert.doesNotMatch(reviewRequestQuery('acme', QUERY), /-reviewed-by/)
+    assert.match(reviewRequestQuery('acme', { ...QUERY, excludeReviewed: true }), /-reviewed-by:@me/)
+  })
+})
+
+describe('authorIcon', () => {
+  it('marks a bot', () => {
+    assert.equal(authorIcon(pr({ authorIsBot: true })), '$(robot)')
+  })
+
+  it('marks a person', () => {
+    assert.equal(authorIcon(pr({ authorIsBot: false })), '$(account)')
+  })
+
+  it('assumes a person when GitHub did not say', () => {
+    assert.equal(authorIcon(pr({ authorIsBot: undefined })), '$(account)')
+  })
+})
+
+describe('DEFAULT_REVIEW_SCOPE', () => {
+  it('is personal, because one broad team drowns the list', () => {
+    assert.equal(DEFAULT_REVIEW_SCOPE, 'personal')
   })
 })
 
@@ -197,5 +235,63 @@ describe('summariseCheckouts', () => {
       summariseCheckouts([{ label: 'a', created: false, reason: 'fetch failed' }]),
       'Created nothing. 1 worktree could not be created.'
     )
+  })
+})
+
+describe('ReviewRequestStore', () => {
+  const settings = {
+    enabled: true,
+    organisation: 'acme',
+    pollMinutes: 5,
+    onDidChange: () => ({ dispose: () => undefined })
+  }
+  const logger = { info: () => undefined, error: () => undefined }
+
+  it('counts what is awaiting review', async () => {
+    const store = new ReviewRequestStore({ fetch: async () => [pr(), pr({ number: 2 })] }, settings, logger)
+    const handle = store.activate()
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(store.count, 2)
+    handle.dispose()
+    store.dispose()
+  })
+
+  it('reports nothing when the organisation is unset', async () => {
+    const store = new ReviewRequestStore(
+      { fetch: async () => [pr()] },
+      { ...settings, organisation: '' },
+      logger
+    )
+    const handle = store.activate()
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(store.current.status, 'disabled')
+    assert.equal(store.count, 0)
+    handle.dispose()
+    store.dispose()
+  })
+
+  it('keeps the last good count when a poll fails', async () => {
+    let calls = 0
+    const store = new ReviewRequestStore(
+      {
+        fetch: async () => {
+          calls += 1
+          if (calls === 1) return [pr()]
+          throw new Error('offline')
+        }
+      },
+      settings,
+      logger
+    )
+    const handle = store.activate()
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(store.count, 1)
+
+    store.refresh()
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(store.current.status, 'error')
+    assert.equal(store.count, 1, 'the badge should not blank on a blip')
+    handle.dispose()
+    store.dispose()
   })
 })

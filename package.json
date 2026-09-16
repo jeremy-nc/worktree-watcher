@@ -2,7 +2,7 @@
   "name": "worktree-watcher",
   "displayName": "Worktree Watcher",
   "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
-  "version": "0.25.0",
+  "version": "0.26.0",
   "publisher": "jeremyheritage",
   "license": "MIT",
   "engines": {
@@ -348,8 +348,18 @@
             "Include pull requests where a team you belong to was asked to review. Right when CODEOWNERS assigns reviews to squad teams.",
             "Only pull requests that name you personally. Matches nothing where review requests go to teams."
           ],
-          "default": "team",
-          "markdownDescription": "Whose review requests **Check Out Review Requests…** lists. `team` maps to GitHub’s `review-requested:@me`, `personal` to `user-review-requested:@me` — these are different queries, and the personal one excludes requests made to a team you belong to."
+          "default": "personal",
+          "markdownDescription": "Whose review requests **Check Out Review Requests…** lists. `personal` maps to GitHub’s `user-review-requested:@me` and `team` to `review-requested:@me`, which also matches requests made to **any** team you belong to — one broad team is usually enough to bury your own queue."
+        },
+        "worktreeWatcher.reviewRequests.excludeDrafts": {
+          "type": "boolean",
+          "default": true,
+          "description": "Leave out pull requests still marked draft."
+        },
+        "worktreeWatcher.reviewRequests.excludeReviewed": {
+          "type": "boolean",
+          "default": true,
+          "markdownDescription": "Leave out pull requests you have already reviewed. Rarely changes anything on its own — submitting a review clears your pending request — but it catches a review **re-requested** after you had already looked."
         },
         "worktreeWatcher.github.pollMinutes": {
           "type": "number",
