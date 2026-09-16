@@ -2,7 +2,7 @@
   "name": "worktree-watcher",
   "displayName": "Worktree Watcher",
   "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
-  "version": "0.30.0",
+  "version": "0.31.0",
   "publisher": "jeremyheritage",
   "license": "MIT",
   "engines": {
@@ -88,12 +88,6 @@
         "icon": "$(comment-discussion)"
       },
       {
-        "command": "worktreeWatcher.resumeClaudeSession",
-        "title": "Resume Claude Session in Terminal",
-        "category": "Worktrees",
-        "icon": "$(terminal)"
-      },
-      {
         "command": "worktreeWatcher.copySessionId",
         "title": "Copy Claude Session ID",
         "category": "Worktrees"
@@ -157,10 +151,6 @@
         },
         {
           "command": "worktreeWatcher.copyPath",
-          "when": "false"
-        },
-        {
-          "command": "worktreeWatcher.resumeClaudeSession",
           "when": "false"
         },
         {
@@ -249,11 +239,6 @@
           "command": "worktreeWatcher.copyPath",
           "when": "view == worktreeWatcher.tree",
           "group": "2_path@2"
-        },
-        {
-          "command": "worktreeWatcher.resumeClaudeSession",
-          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree\\.claude/",
-          "group": "3_claude@1"
         },
         {
           "command": "worktreeWatcher.copySessionId",

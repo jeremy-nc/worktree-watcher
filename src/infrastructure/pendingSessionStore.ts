@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 
-import { claimsPending, PendingSession } from '../domain/handoff'
+import { claimsPending, isActionable, PendingSession } from '../domain/handoff'
 
 /**
  * Parks a session request on disk while the window that should handle it starts.
@@ -54,9 +54,9 @@ export class PendingSessionStore {
     try {
       const parsed = JSON.parse(await fs.readFile(this.file, 'utf8')) as Partial<PendingSession>
       if (
-        typeof parsed.sessionId === 'string' &&
         typeof parsed.worktreePath === 'string' &&
-        typeof parsed.requestedAt === 'number'
+        typeof parsed.requestedAt === 'number' &&
+        isActionable(parsed)
       ) {
         return parsed as PendingSession
       }

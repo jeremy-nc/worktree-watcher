@@ -123,6 +123,42 @@ export class ClaudeTranscriptVerifier implements SessionVerifier {
       .sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
   }
 
+  /**
+   * Groups a directory's sessions by which of `needles` their transcript
+   * mentions, newest first.
+   *
+   * Only the **head** of each transcript is read. A session started for a
+   * particular pull request is seeded with its URL, so the marker is in the
+   * opening message — reading further would cost megabytes to learn nothing.
+   *
+   * Each transcript is read once and checked against every needle, rather than
+   * once per needle, so the cost is the number of sessions and not the product.
+   */
+  async sessionsByMention(
+    directory: string,
+    needles: readonly string[]
+  ): Promise<Map<string, ClaudeSession[]>> {
+    const grouped = new Map<string, ClaudeSession[]>()
+    if (needles.length === 0) {
+      return grouped
+    }
+
+    const projectDirectory = this.transcriptDirectory(directory)
+    for (const session of await this.sessionsIn(directory)) {
+      const head = await readHead(path.join(projectDirectory, `${session.id}.jsonl`))
+      if (!head) {
+        continue
+      }
+      for (const needle of needles) {
+        if (head.includes(needle)) {
+          grouped.set(needle, [...(grouped.get(needle) ?? []), session])
+        }
+      }
+    }
+
+    return grouped
+  }
+
   /** Titles for several sessions at once, keyed by session id. */
   async titles(sessionIds: readonly string[]): Promise<Map<string, string>> {
     const resolved = await Promise.all(
@@ -139,6 +175,23 @@ export class ClaudeTranscriptVerifier implements SessionVerifier {
    */
   transcriptDirectory(worktreePath: string): string {
     return path.join(this.projectsRoot, projectSlug(worktreePath))
+  }
+}
+
+/** The opening exchange is all that carries a seeded marker. */
+const HEAD_BYTES = 64 * 1024
+
+async function readHead(file: string): Promise<string | undefined> {
+  let handle
+  try {
+    handle = await fs.open(file, 'r')
+    const buffer = Buffer.alloc(HEAD_BYTES)
+    const { bytesRead } = await handle.read(buffer, 0, HEAD_BYTES, 0)
+    return buffer.subarray(0, bytesRead).toString('utf8')
+  } catch {
+    return undefined
+  } finally {
+    await handle?.close()
   }
 }
 

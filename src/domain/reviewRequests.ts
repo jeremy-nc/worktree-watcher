@@ -249,6 +249,24 @@ export function describeReviewQueue(count: number): string | undefined {
 }
 
 /**
+ * The opening message for a session started against a pull request.
+ *
+ * The URL is in it for two reasons: it tells Claude which pull request this is,
+ * and it is the marker that later identifies the session as belonging to this
+ * one. Branch names cannot serve as that marker — Dependabot opens identically
+ * named branches in every repository it touches, so a branch would match the
+ * wrong repository's session.
+ */
+export function botSessionPrompt(pullRequest: ReviewRequest): string {
+  return [
+    `Review ${pullRequest.url}`,
+    `(${pullRequest.repository}, branch ${pullRequest.branch}).`,
+    'Use the /worktree skill to create a worktree for that branch following the',
+    '~/Code conventions, check the branch out there, and review the change.'
+  ].join(' ')
+}
+
+/**
  * What the bot-workspace button says before you press it.
  *
  * The worktree rows know their sessions from the scan, so their button only
@@ -264,11 +282,11 @@ export function botSessionTooltip(options: {
 }): string {
   const { count, latestTitle, workspace } = options
   if (count === 0) {
-    return `Start a Claude session in ${workspace}`
+    return `Start a Claude session for this pull request in ${workspace}`
   }
 
-  const named = latestTitle ? `“${latestTitle}”` : 'the most recent session'
-  const others = count === 1 ? '' : ` — ${count} in this workspace`
+  const named = latestTitle ? `“${latestTitle}”` : 'its session'
+  const others = count === 1 ? '' : ` — ${count} for this pull request`
   return `Resume ${named} in ${workspace}${others}`
 }
 

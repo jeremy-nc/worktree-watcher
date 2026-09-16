@@ -9,10 +9,24 @@
 /** A handoff older than this is stale — the user has moved on. */
 export const PENDING_TTL_MS = 2 * 60_000
 
+/**
+ * A request parked for another window.
+ *
+ * Exactly one of `sessionId` and `prompt` is set: resume a conversation that
+ * exists, or start one that does not. A new conversation cannot be identified by
+ * id because it has none yet, which is why the two cases cannot share a field.
+ */
 export interface PendingSession {
-  readonly sessionId: string
+  readonly sessionId?: string
+  /** Seed text for a conversation that does not exist yet. */
+  readonly prompt?: string
   readonly worktreePath: string
   readonly requestedAt: number
+}
+
+/** True when the request names something to act on. */
+export function isActionable(pending: Partial<PendingSession>): boolean {
+  return typeof pending.sessionId === 'string' || typeof pending.prompt === 'string'
 }
 
 /**

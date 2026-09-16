@@ -35,6 +35,7 @@ import {
   QueryOptions,
   ReviewRequest,
   authorIcon,
+  botSessionPrompt,
   botSessionTooltip,
   candidateDescription as reviewRequestDescription,
   planCheckouts,
@@ -46,11 +47,7 @@ import {
   GitWorktreeCreator
 } from './infrastructure/gitWorktreeCreator'
 import { chooseDeployTargets, deployProjectOf, describeDeploy, DeployTarget } from './domain/deploy'
-import {
-  ClaudeCodeLauncher,
-  resumeInTerminal,
-  startClaudeInTerminal
-} from './infrastructure/claudeCodeLauncher'
+import { ClaudeCodeLauncher } from './infrastructure/claudeCodeLauncher'
 import { ClaudeTranscriptVerifier } from './infrastructure/claudeTranscriptVerifier'
 import { PendingSessionStore } from './infrastructure/pendingSessionStore'
 import { FsWorktreeScanner } from './infrastructure/fsWorktreeScanner'
@@ -273,12 +270,6 @@ export function activate(context: vscode.ExtensionContext): void {
       const session = await chooseSession(node, 'Open which Claude session?', transcripts)
       if (session && node?.kind === 'worktree') {
         await launcher.open(session.id, node.worktree.absolutePath)
-      }
-    }),
-    vscode.commands.registerCommand('worktreeWatcher.resumeClaudeSession', async (node?: Node) => {
-      const session = await chooseSession(node, 'Resume which Claude session?', transcripts)
-      if (session && node?.kind === 'worktree') {
-        resumeInTerminal(session.id, node.worktree.absolutePath)
       }
     }),
     vscode.commands.registerCommand('worktreeWatcher.removeWorktree', async (node?: Node) => {
@@ -539,21 +530,27 @@ async function checkOutReviewRequests(deps: {
       local.get(`${pullRequest.repository}#${pullRequest.branch}`) ?? { worktreeExists: false }
   )
 
-  // Read before the list is shown, so a row can say whether its button resumes
-  // or starts — the worktree rows know that from the scan, and these should not
-  // be the odd ones out. One readdir plus, at most, one transcript read.
-  const botSessions = await deps.transcripts.sessionsIn(deps.botWorkspace)
-  const latestBotTitle = botSessions[0]
-    ? await deps.transcripts.title(botSessions[0].id)
-    : undefined
+  // Which pull requests already have a session, read before the list is shown so
+  // each row can say whether its button resumes or starts. Keyed by pull request
+  // URL: a branch name would be ambiguous, since Dependabot opens identically
+  // named branches in every repository it touches.
+  const botSessions = await deps.transcripts.sessionsByMention(
+    deps.botWorkspace,
+    candidates
+      .filter((candidate) => candidate.pullRequest.authorIsBot)
+      .map((candidate) => candidate.pullRequest.url)
+  )
+  const botTitles = await deps.transcripts.titles(
+    [...botSessions.values()].map((found) => found[0].id)
+  )
 
   const selected = await pickReviewRequests(candidates, {
     botWorkspace: deps.botWorkspace,
     botSessions,
-    latestBotTitle,
+    botTitles,
     logger: deps.logger,
     openBotSession: (pullRequest) =>
-      openBotWorkspaceSession(pullRequest, {
+      openBotWorkspaceSession(pullRequest, botSessions.get(pullRequest.url) ?? [], {
         workspace: deps.botWorkspace,
         transcripts: deps.transcripts,
         launcher: deps.launcher,
@@ -596,6 +593,7 @@ async function checkOutReviewRequests(deps: {
  */
 async function openBotWorkspaceSession(
   pullRequest: ReviewRequest,
+  sessions: readonly ClaudeSession[],
   deps: {
     workspace: string
     transcripts: ClaudeTranscriptVerifier
@@ -603,6 +601,8 @@ async function openBotWorkspaceSession(
     logger: OutputLogger
   }
 ): Promise<void> {
+  // Case three, and it comes first because the other two both need it: the
+  // workspace may never have been used.
   try {
     await fs.mkdir(deps.workspace, { recursive: true })
   } catch (error) {
@@ -612,34 +612,26 @@ async function openBotWorkspaceSession(
     return
   }
 
-  const sessions = await deps.transcripts.sessionsIn(deps.workspace)
-  deps.logger.info(`bot workspace ${deps.workspace}: ${sessions.length} session(s)`)
-
-  const session = await chooseSessionFrom(
-    sessions,
-    deps.transcripts,
-    `Which session for ${pullRequest.repository} #${pullRequest.number}?`
-  )
-
-  if (session) {
-    await deps.launcher.open(session.id, deps.workspace)
-    return
-  }
-
+  // Case one: this pull request already has a session. Open VS Code on the
+  // workspace and focus it, exactly as a worktree row does.
   if (sessions.length > 0) {
-    // There were sessions and the list was dismissed — that is a cancel, not a
-    // request for a new one.
+    const session = await chooseSessionFrom(
+      sessions,
+      deps.transcripts,
+      `Which session for ${pullRequest.repository} #${pullRequest.number}?`
+    )
+    if (session) {
+      deps.logger.info(`resuming ${session.id} for ${pullRequest.url}`)
+      await deps.launcher.open(session.id, deps.workspace)
+    }
     return
   }
 
-  // Nothing has ever run here. A session cannot be created by id, so the window
-  // opens and Claude is started in a terminal there.
-  await vscode.commands.executeCommand(
-    'vscode.openFolder',
-    vscode.Uri.file(deps.workspace),
-    { forceNewWindow: true }
-  )
-  startClaudeInTerminal(deps.workspace)
+  // Case two: it has none. Open VS Code on the workspace and start one, seeded
+  // with the pull request so the new conversation knows what it is for — and so
+  // the next visit can find it by that same marker.
+  deps.logger.info(`starting a session for ${pullRequest.url}`)
+  await deps.launcher.start(botSessionPrompt(pullRequest), deps.workspace)
 }
 
 /** As `chooseSession`, but over sessions already in hand. */
@@ -690,22 +682,37 @@ async function pickReviewRequests(
   candidates: readonly CheckoutCandidate[],
   deps: {
     botWorkspace: string
-    botSessions: readonly ClaudeSession[]
-    latestBotTitle?: string
+    botSessions: ReadonlyMap<string, readonly ClaudeSession[]>
+    botTitles: ReadonlyMap<string, string>
     openBotSession: (pullRequest: ReviewRequest) => Promise<void>
     logger: OutputLogger
   }
 ): Promise<readonly CheckoutCandidate[]> {
   const now = Date.now()
+  const workspace = tildify(deps.botWorkspace, os.homedir())
 
-  // Built once: the workspace is shared, so every bot row carries the same
-  // button, and the handler matches it by reference.
-  const botButton: vscode.QuickInputButton = {
-    iconPath: new vscode.ThemeIcon(deps.botSessions.length > 0 ? 'comment-discussion' : 'add'),
-    tooltip: botSessionTooltip({
-      count: deps.botSessions.length,
-      latestTitle: deps.latestBotTitle,
-      workspace: tildify(deps.botWorkspace, os.homedir())
+  // One button per row rather than one shared: whether it resumes or starts is
+  // now a fact about that pull request, not about the workspace. The handler
+  // matches by reference, so each must be a distinct object.
+  const botButtons = new Map<string, vscode.QuickInputButton>()
+  for (const candidate of candidates) {
+    const { pullRequest } = candidate
+    if (!pullRequest.authorIsBot) {
+      continue
+    }
+    const found = deps.botSessions.get(pullRequest.url) ?? []
+    botButtons.set(pullRequest.url, {
+      // Tinted when there is a conversation to go back to, plain when this
+      // would be the first — the same signal the worktree rows give.
+      iconPath: new vscode.ThemeIcon(
+        found.length > 0 ? 'comment-discussion' : 'add',
+        found.length > 0 ? new vscode.ThemeColor('charts.purple') : undefined
+      ),
+      tooltip: botSessionTooltip({
+        count: found.length,
+        latestTitle: found[0] ? deps.botTitles.get(found[0].id) : undefined,
+        workspace
+      })
     })
   }
   const quickPick = vscode.window.createQuickPick<ReviewQuickPickItem>()
@@ -722,7 +729,7 @@ async function pickReviewRequests(
     description: reviewRequestDescription(candidate, now),
     detail: candidate.warning ?? candidate.pullRequest.branch,
     buttons: candidate.pullRequest.authorIsBot
-      ? [OPEN_ON_GITHUB, botButton]
+      ? [OPEN_ON_GITHUB, botButtons.get(candidate.pullRequest.url) as vscode.QuickInputButton]
       : // The bot workspace is for dependency bumps; a colleague's pull request
         // belongs in its own repository's worktree, not a shared scratch folder.
         [OPEN_ON_GITHUB],
@@ -740,7 +747,7 @@ async function pickReviewRequests(
         await vscode.env.openExternal(vscode.Uri.parse(pullRequest.url))
         return
       }
-      if (event.button === botButton) {
+      if (event.button === botButtons.get(pullRequest.url)) {
         // Hide first: opening a window while the picker is up leaves it
         // stranded over the new editor.
         quickPick.hide()

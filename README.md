@@ -542,23 +542,41 @@ icons on the right:
 | `$(link-external)` | every row | Open the pull request on GitHub |
 | `$(comment-discussion)` / `$(add)` | bot rows only | Resume a session in the bot workspace, or start one |
 
-The second works like a worktree row's **Open Claude Session** — one session
-resolves straight away, several offer a list titled by their Claude titles, none
-starts a fresh one — and, like a worktree row, it knows that *before* it is
-pressed. The workspace's sessions are read as the list is built, so the icon and
-tooltip already say which it will be:
+The second has three cases, decided per pull request before the list is shown:
+
+| | Icon | What happens |
+|---|---|---|
+| It has a session | `$(comment-discussion)`, tinted | Open VS Code on the workspace and focus that conversation |
+| It has none | `$(add)`, plain | Open VS Code on the workspace and start one, seeded with the pull request |
+| The workspace is missing | — | Created first; the other two then proceed |
+
+**Never a terminal.** Both paths go through Claude Code's own
+`claude-vscode.primaryEditor.open`, which takes `(sessionId, initialPrompt)`:
+with an id it resumes, with no id and a prompt it starts a new conversation
+already seeded. That second argument had been sitting unused.
+
+**Which session belongs to which pull request** is answered by the seed prompt.
+A new conversation opens with the pull request's URL in its first message, and
+that URL is the marker a later visit matches on:
 
 ```
-Resume “Apply worktree conventions to PR” in ~/Code/dependabot — 2 in this workspace
-Start a Claude session in ~/Code/dependabot
+Review https://github.com/acme/widget-service/pull/627 (widget-service, branch
+dependabot/gradle/org.flywaydb-11.1.0). Use the /worktree skill to create a
+worktree for that branch following the ~/Code conventions, check the branch out
+there, and review the change.
 ```
 
-The wording names the **directory** on purpose. Unlike a worktree, the bot
-workspace is shared, so these sessions belong to the folder rather than to the
-pull request whose row you pressed — every bot row offers the same ones. Saying
-so is cheaper than letting you infer it and be wrong.
+The URL, not the branch. Dependabot opens identically named branches in every
+repository it touches, so a branch would match the wrong repository's session —
+the same collision `buildBelongsTo` guards against for CI.
 
-The only difference from a worktree row is where the sessions come from. A worktree keeps them in a git sidecar; a plain directory has nowhere to
+Only the first 64KB of each transcript is read, since a seeded marker is in the
+opening message, and each transcript is read once and checked against every
+pull request rather than once per pull request.
+
+Sessions that predate this feature match nothing and show as case two, because
+they were never seeded with a URL. The only difference from a worktree row is
+where the sessions come from. A worktree keeps them in a git sidecar; a plain directory has nowhere to
 put one, so they are read from Claude Code's own layout instead — every
 transcript for a directory already lives in that directory's project folder, so
 there is no second copy of the same fact to keep in step.

@@ -5,6 +5,7 @@ import {
   DEFAULT_REVIEW_SCOPE,
   ReviewRequest,
   authorIcon,
+  botSessionPrompt,
   botSessionTooltip,
   candidateDescription,
   describeAuthor,
@@ -114,10 +115,10 @@ describe('describeReviewQueue', () => {
 describe('botSessionTooltip', () => {
   const workspace = '~/Code/dependabot'
 
-  it('offers to start one when the workspace has never been used', () => {
+  it('offers to start one when this pull request has no session', () => {
     assert.equal(
       botSessionTooltip({ count: 0, workspace }),
-      'Start a Claude session in ~/Code/dependabot'
+      'Start a Claude session for this pull request in ~/Code/dependabot'
     )
   })
 
@@ -131,16 +132,34 @@ describe('botSessionTooltip', () => {
   it('says how many there are when there is a choice', () => {
     assert.match(
       botSessionTooltip({ count: 2, latestTitle: 'Apply worktree conventions', workspace }),
-      /— 2 in this workspace$/
+      /— 2 for this pull request$/
     )
   })
 
   it('copes with a session Claude has not titled yet', () => {
-    assert.match(botSessionTooltip({ count: 1, workspace }), /Resume the most recent session/)
+    assert.match(botSessionTooltip({ count: 1, workspace }), /Resume its session/)
   })
 
-  it('names the directory, since these sessions belong to it and not the PR', () => {
+  it('names the directory the session will open in', () => {
     assert.match(botSessionTooltip({ count: 2, workspace }), /~\/Code\/dependabot/)
+  })
+})
+
+describe('botSessionPrompt', () => {
+  it('leads with the pull request URL, which is also the marker', () => {
+    const prompt = botSessionPrompt(pr({ url: 'https://github.com/acme/widget-service/pull/627' }))
+    assert.match(prompt, /^Review https:\/\/github\.com\/acme\/widget-service\/pull\/627/)
+  })
+
+  it('names the repository and branch so the worktree can be made', () => {
+    const prompt = botSessionPrompt(pr())
+    assert.match(prompt, /widget-service/)
+    assert.match(prompt, /dependabot\/gradle\/org\.flywaydb-11\.1\.0/)
+  })
+
+  it('asks for the worktree skill and the conventions', () => {
+    assert.match(botSessionPrompt(pr()), /\/worktree skill/)
+    assert.match(botSessionPrompt(pr()), /~\/Code conventions/)
   })
 })
 

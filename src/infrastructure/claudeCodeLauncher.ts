@@ -1,4 +1,3 @@
-import * as path from 'node:path'
 import * as vscode from 'vscode'
 
 import { Logger } from '../application/ports'
@@ -6,7 +5,13 @@ import { isFolderOpen } from '../domain/handoff'
 import { ClaudeTranscriptVerifier } from './claudeTranscriptVerifier'
 import { PendingSessionStore } from './pendingSessionStore'
 
-/** Command the Claude Code extension's own URI handler forwards `/open` to. */
+/**
+ * Claude Code's own command, taking `(sessionId, initialPrompt)`.
+ *
+ * With an id it resumes that conversation; with no id and a prompt it starts a
+ * new one already seeded. Both paths here go through it, so a session is never
+ * opened in a terminal.
+ */
 const OPEN_SESSION_COMMAND = 'claude-vscode.primaryEditor.open'
 
 /** How long to wait for the Claude Code extension to finish activating. */
@@ -74,7 +79,7 @@ export class ClaudeCodeLauncher {
   private async openIn(sessionId: string, worktreePath: string): Promise<void> {
     this.logger.info(`open ${sessionId} for ${worktreePath}`)
     if (isFolderOpen(worktreePath, workspacePaths())) {
-      await this.openHere(sessionId, worktreePath, 0)
+      await this.openHere(sessionId, 0)
       return
     }
     this.logger.info(`worktree not open here (${workspacePaths().join(', ') || 'no folders'}); parking request`)
@@ -88,36 +93,74 @@ export class ClaudeCodeLauncher {
   }
 
   /**
+   * Starts a new conversation in a directory, seeded with a prompt.
+   *
+   * There is no session id yet — that is the point — so this cannot go through
+   * `open`. It takes the same route otherwise: run here if the folder is open,
+   * otherwise park the request and let the window that lands on it act.
+   */
+  async start(prompt: string, directory: string): Promise<void> {
+    this.logger.info(`start new session in ${directory}`)
+    if (isFolderOpen(directory, workspacePaths())) {
+      await this.startHere(prompt)
+      return
+    }
+
+    await this.pending.write({ prompt, worktreePath: directory, requestedAt: Date.now() })
+    await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(directory), {
+      forceNewWindow: true
+    })
+  }
+
+  /**
    * Called on activation. If this window is the one a pending request was aimed
-   * at, claim it and open the session.
+   * at, claim it and act on it.
    */
   async consumePending(): Promise<void> {
     const pending = await this.pending.claim(workspacePaths(), Date.now())
     if (!pending) {
       return
     }
+
+    if (pending.prompt !== undefined) {
+      this.logger.info('claimed pending new-session request')
+      await this.startHere(pending.prompt)
+      return
+    }
+    if (pending.sessionId === undefined) {
+      return
+    }
+
     this.logger.info(`claimed pending session ${pending.sessionId}`)
     // This window is still restoring, so give its tabs time to appear.
-    await this.openHere(pending.sessionId, pending.worktreePath, TAB_SETTLE_TIMEOUT_MS)
+    await this.openHere(pending.sessionId, TAB_SETTLE_TIMEOUT_MS)
+  }
+
+  /**
+   * Opens a new conversation seeded with `prompt`.
+   *
+   * `primaryEditor.open` takes `(sessionId, initialPrompt)`; passing no id is
+   * what makes it a new conversation rather than a resumed one.
+   */
+  private async startHere(prompt: string): Promise<void> {
+    if (!(await this.waitForClaudeCode())) {
+      void vscode.window.showWarningMessage(
+        'Claude Code did not become available, so no session could be started.'
+      )
+      return
+    }
+    await vscode.commands.executeCommand(OPEN_SESSION_COMMAND, undefined, prompt)
   }
 
   /** Opens (or focuses) a session whose worktree is open in this window. */
-  private async openHere(
-    sessionId: string,
-    worktreePath: string,
-    settleMs: number
-  ): Promise<void> {
+  private async openHere(sessionId: string, settleMs: number): Promise<void> {
     // A freshly started window activates this extension alongside Claude Code,
     // so the command may not exist yet. Waiting beats silently dropping the
     // request, which is what checking once would do.
     if (!(await this.waitForClaudeCode())) {
-      const choice = await vscode.window.showWarningMessage(
-        'Claude Code did not become available, so the session could not be opened.',
-        'Resume in Terminal'
+      void vscode.window.showWarningMessage(
+        'Claude Code did not become available, so the session could not be opened.'
       )
-      if (choice) {
-        resumeInTerminal(sessionId, worktreePath)
-      }
       return
     }
 
@@ -207,32 +250,6 @@ function isClaudeTab(tab: vscode.Tab): boolean {
     tab.input instanceof vscode.TabInputWebview &&
     tab.input.viewType.includes(CLAUDE_PANEL_VIEW_TYPE)
   )
-}
-
-/** Opens a terminal in the worktree and resumes the session through the CLI. */
-export function resumeInTerminal(sessionId: string, worktreePath: string): void {
-  const terminal = vscode.window.createTerminal({
-    name: `claude · ${path.basename(worktreePath)}`,
-    cwd: worktreePath
-  })
-  terminal.show()
-  terminal.sendText(`claude --resume ${sessionId}`)
-}
-
-/**
- * Starts a brand-new Claude session in a directory.
- *
- * Not `OPEN_SESSION_COMMAND`, which resumes a session *by id* — there is no id
- * yet, and no API hands one back for a session that does not exist. The CLI is
- * the way to create one, so a terminal it is.
- */
-export function startClaudeInTerminal(cwd: string): void {
-  const terminal = vscode.window.createTerminal({
-    name: `claude · ${path.basename(cwd)}`,
-    cwd
-  })
-  terminal.show()
-  terminal.sendText('claude')
 }
 
 /** Claude tabs currently open, for diagnosing a duplicate. */
