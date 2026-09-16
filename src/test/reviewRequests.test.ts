@@ -5,6 +5,7 @@ import {
   DEFAULT_REVIEW_SCOPE,
   ReviewRequest,
   authorIcon,
+  botSessionTooltip,
   candidateDescription,
   describeAuthor,
   describeReviewQueue,
@@ -107,6 +108,39 @@ describe('describeReviewQueue', () => {
 
   it('says nothing at zero rather than printing a nought', () => {
     assert.equal(describeReviewQueue(0), undefined)
+  })
+})
+
+describe('botSessionTooltip', () => {
+  const workspace = '~/Code/dependabot'
+
+  it('offers to start one when the workspace has never been used', () => {
+    assert.equal(
+      botSessionTooltip({ count: 0, workspace }),
+      'Start a Claude session in ~/Code/dependabot'
+    )
+  })
+
+  it('names the session it would resume', () => {
+    assert.equal(
+      botSessionTooltip({ count: 1, latestTitle: 'Apply worktree conventions to PR', workspace }),
+      'Resume “Apply worktree conventions to PR” in ~/Code/dependabot'
+    )
+  })
+
+  it('says how many there are when there is a choice', () => {
+    assert.match(
+      botSessionTooltip({ count: 2, latestTitle: 'Apply worktree conventions', workspace }),
+      /— 2 in this workspace$/
+    )
+  })
+
+  it('copes with a session Claude has not titled yet', () => {
+    assert.match(botSessionTooltip({ count: 1, workspace }), /Resume the most recent session/)
+  })
+
+  it('names the directory, since these sessions belong to it and not the PR', () => {
+    assert.match(botSessionTooltip({ count: 2, workspace }), /~\/Code\/dependabot/)
   })
 })
 

@@ -248,6 +248,30 @@ export function describeReviewQueue(count: number): string | undefined {
   return `${count} PR${count === 1 ? '' : 's'} awaiting review`
 }
 
+/**
+ * What the bot-workspace button says before you press it.
+ *
+ * The worktree rows know their sessions from the scan, so their button only
+ * exists when there is something to resume. These rows are told the same thing,
+ * with one honest difference: the workspace is shared, so these sessions belong
+ * to the **directory**, not to this pull request. The wording names the
+ * directory so that cannot be mistaken.
+ */
+export function botSessionTooltip(options: {
+  readonly count: number
+  readonly latestTitle?: string
+  readonly workspace: string
+}): string {
+  const { count, latestTitle, workspace } = options
+  if (count === 0) {
+    return `Start a Claude session in ${workspace}`
+  }
+
+  const named = latestTitle ? `“${latestTitle}”` : 'the most recent session'
+  const others = count === 1 ? '' : ` — ${count} in this workspace`
+  return `Resume ${named} in ${workspace}${others}`
+}
+
 /** Outcome of one checkout, so partial failure can be reported honestly. */
 export interface CheckoutOutcome {
   readonly label: string

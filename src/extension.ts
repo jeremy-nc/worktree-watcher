@@ -35,6 +35,7 @@ import {
   QueryOptions,
   ReviewRequest,
   authorIcon,
+  botSessionTooltip,
   candidateDescription as reviewRequestDescription,
   planCheckouts,
   summariseCheckouts
@@ -54,7 +55,7 @@ import { ClaudeTranscriptVerifier } from './infrastructure/claudeTranscriptVerif
 import { PendingSessionStore } from './infrastructure/pendingSessionStore'
 import { FsWorktreeScanner } from './infrastructure/fsWorktreeScanner'
 import { OutputLogger } from './infrastructure/outputLogger'
-import { worktreeLabel } from './domain/display'
+import { tildify, worktreeLabel } from './domain/display'
 import { buildBelongsTo } from './domain/build'
 import {
   SECTION,
@@ -538,8 +539,18 @@ async function checkOutReviewRequests(deps: {
       local.get(`${pullRequest.repository}#${pullRequest.branch}`) ?? { worktreeExists: false }
   )
 
+  // Read before the list is shown, so a row can say whether its button resumes
+  // or starts — the worktree rows know that from the scan, and these should not
+  // be the odd ones out. One readdir plus, at most, one transcript read.
+  const botSessions = await deps.transcripts.sessionsIn(deps.botWorkspace)
+  const latestBotTitle = botSessions[0]
+    ? await deps.transcripts.title(botSessions[0].id)
+    : undefined
+
   const selected = await pickReviewRequests(candidates, {
     botWorkspace: deps.botWorkspace,
+    botSessions,
+    latestBotTitle,
     logger: deps.logger,
     openBotSession: (pullRequest) =>
       openBotWorkspaceSession(pullRequest, {
@@ -659,11 +670,6 @@ const OPEN_ON_GITHUB: vscode.QuickInputButton = {
   iconPath: new vscode.ThemeIcon('link-external'),
   tooltip: 'Open on GitHub'
 }
-const OPEN_BOT_SESSION: vscode.QuickInputButton = {
-  iconPath: new vscode.ThemeIcon('comment-discussion'),
-  tooltip: 'Open a Claude session in the bot workspace'
-}
-
 interface ReviewQuickPickItem extends vscode.QuickPickItem {
   readonly candidate: CheckoutCandidate
 }
@@ -684,11 +690,24 @@ async function pickReviewRequests(
   candidates: readonly CheckoutCandidate[],
   deps: {
     botWorkspace: string
+    botSessions: readonly ClaudeSession[]
+    latestBotTitle?: string
     openBotSession: (pullRequest: ReviewRequest) => Promise<void>
     logger: OutputLogger
   }
 ): Promise<readonly CheckoutCandidate[]> {
   const now = Date.now()
+
+  // Built once: the workspace is shared, so every bot row carries the same
+  // button, and the handler matches it by reference.
+  const botButton: vscode.QuickInputButton = {
+    iconPath: new vscode.ThemeIcon(deps.botSessions.length > 0 ? 'comment-discussion' : 'add'),
+    tooltip: botSessionTooltip({
+      count: deps.botSessions.length,
+      latestTitle: deps.latestBotTitle,
+      workspace: tildify(deps.botWorkspace, os.homedir())
+    })
+  }
   const quickPick = vscode.window.createQuickPick<ReviewQuickPickItem>()
   quickPick.title = 'Pull requests awaiting your review'
   quickPick.placeholder = 'Ticked items get a worktree under <repo>.worktrees/'
@@ -703,7 +722,7 @@ async function pickReviewRequests(
     description: reviewRequestDescription(candidate, now),
     detail: candidate.warning ?? candidate.pullRequest.branch,
     buttons: candidate.pullRequest.authorIsBot
-      ? [OPEN_ON_GITHUB, OPEN_BOT_SESSION]
+      ? [OPEN_ON_GITHUB, botButton]
       : // The bot workspace is for dependency bumps; a colleague's pull request
         // belongs in its own repository's worktree, not a shared scratch folder.
         [OPEN_ON_GITHUB],
@@ -721,7 +740,7 @@ async function pickReviewRequests(
         await vscode.env.openExternal(vscode.Uri.parse(pullRequest.url))
         return
       }
-      if (event.button === OPEN_BOT_SESSION) {
+      if (event.button === botButton) {
         // Hide first: opening a window while the picker is up leaves it
         // stranded over the new editor.
         quickPick.hide()

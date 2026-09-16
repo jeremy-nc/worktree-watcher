@@ -540,12 +540,25 @@ icons on the right:
 | | | |
 |---|---|---|
 | `$(link-external)` | every row | Open the pull request on GitHub |
-| `$(comment-discussion)` | bot rows only | Open a Claude session in the bot workspace |
+| `$(comment-discussion)` / `$(add)` | bot rows only | Resume a session in the bot workspace, or start one |
 
-The second works exactly like a worktree row's **Open Claude Session**: one
-session resolves straight away, several offer a list titled by their Claude
-titles, none starts a fresh one. The only difference is where the sessions come
-from. A worktree keeps them in a git sidecar; a plain directory has nowhere to
+The second works like a worktree row's **Open Claude Session** — one session
+resolves straight away, several offer a list titled by their Claude titles, none
+starts a fresh one — and, like a worktree row, it knows that *before* it is
+pressed. The workspace's sessions are read as the list is built, so the icon and
+tooltip already say which it will be:
+
+```
+Resume “Apply worktree conventions to PR” in ~/Code/dependabot — 2 in this workspace
+Start a Claude session in ~/Code/dependabot
+```
+
+The wording names the **directory** on purpose. Unlike a worktree, the bot
+workspace is shared, so these sessions belong to the folder rather than to the
+pull request whose row you pressed — every bot row offers the same ones. Saying
+so is cheaper than letting you infer it and be wrong.
+
+The only difference from a worktree row is where the sessions come from. A worktree keeps them in a git sidecar; a plain directory has nowhere to
 put one, so they are read from Claude Code's own layout instead — every
 transcript for a directory already lives in that directory's project folder, so
 there is no second copy of the same fact to keep in step.

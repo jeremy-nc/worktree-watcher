@@ -2,7 +2,7 @@
   "name": "worktree-watcher",
   "displayName": "Worktree Watcher",
   "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
-  "version": "0.29.0",
+  "version": "0.30.0",
   "publisher": "jeremyheritage",
   "license": "MIT",
   "engines": {
