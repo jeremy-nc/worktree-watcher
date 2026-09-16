@@ -5,7 +5,7 @@ import * as vscode from 'vscode'
 import { ActivityStore } from './application/activityStore'
 import { PullRequestStore } from './application/pullRequestStore'
 import { WorktreeStore } from './application/worktreeStore'
-import { ClaudeSession, Repository } from './domain/model'
+import { ClaudeSession, Repository, WORKTREES_SUFFIX } from './domain/model'
 import { BranchRef, PullRequest } from './domain/pullRequest'
 import { GhPullRequestSource } from './infrastructure/ghPullRequestSource'
 import { BuildStore } from './application/buildStore'
@@ -27,6 +27,18 @@ import {
   selectStale,
   summariseCleanUp
 } from './domain/cleanUp'
+import {
+  CheckoutCandidate,
+  CheckoutOutcome,
+  candidateDescription as reviewRequestDescription,
+  planCheckouts,
+  summariseCheckouts
+} from './domain/reviewRequests'
+import { GhReviewRequestSource } from './infrastructure/ghReviewRequestSource'
+import {
+  BranchAlreadyCheckedOutError,
+  GitWorktreeCreator
+} from './infrastructure/gitWorktreeCreator'
 import { chooseDeployTargets, deployProjectOf, describeDeploy, DeployTarget } from './domain/deploy'
 import { ClaudeCodeLauncher, resumeInTerminal } from './infrastructure/claudeCodeLauncher'
 import { ClaudeTranscriptVerifier } from './infrastructure/claudeTranscriptVerifier'
@@ -251,6 +263,16 @@ export function activate(context: vscode.ExtensionContext): void {
         onRemoved: () => store.refresh()
       })
     }),
+    vscode.commands.registerCommand('worktreeWatcher.checkOutReviewRequests', async () => {
+      await checkOutReviewRequests({
+        source: new GhReviewRequestSource(gitHubSettings.organisation, settings.reviewScope),
+        creator: new GitWorktreeCreator(),
+        rootPath: settings.rootPath,
+        organisation: gitHubSettings.organisation,
+        logger,
+        onCreated: () => store.refresh()
+      })
+    }),
     vscode.commands.registerCommand('worktreeWatcher.cleanUpWorktrees', async (node?: Node) => {
       if (node?.kind !== 'repository') {
         return
@@ -409,6 +431,190 @@ async function triggerDeploy(
  * Confirms, then removes. The dialog carries the facts that differ per worktree —
  * a generic "are you sure?" just trains you to click through it.
  */
+/**
+ * Lists pull requests waiting on your review and checks out worktrees for the
+ * ones you tick.
+ *
+ * The inverse of everything else here: these branches have no worktree yet, which
+ * is the whole point — the alternative is copying a branch name out of a browser
+ * for each one.
+ */
+async function checkOutReviewRequests(deps: {
+  source: GhReviewRequestSource
+  creator: GitWorktreeCreator
+  rootPath: string
+  organisation: string
+  logger: OutputLogger
+  onCreated: () => void
+}): Promise<void> {
+  if (!deps.organisation) {
+    void vscode.window.showWarningMessage(
+      'Set “worktreeWatcher.github.organisation” before looking for review requests.'
+    )
+    return
+  }
+
+  let pullRequests
+  try {
+    pullRequests = await vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: 'Finding pull requests awaiting your review…'
+      },
+      () => deps.source.fetch()
+    )
+  } catch (error) {
+    void vscode.window.showErrorMessage(`Could not reach GitHub: ${describeError(error)}`)
+    return
+  }
+
+  if (pullRequests.length === 0) {
+    void vscode.window.showInformationMessage(
+      'No pull requests are waiting on your review.'
+    )
+    return
+  }
+
+  // Resolving each repository is a couple of stats, so it runs for all of them
+  // at once rather than blocking the list on a sequential walk.
+  const local = new Map<string, { mainCheckout?: string; worktreeExists: boolean }>()
+  await Promise.all(
+    pullRequests.map(async (pullRequest) => {
+      const mainCheckout = await deps.creator.mainCheckout(deps.rootPath, pullRequest.repository)
+      const worktreeExists = mainCheckout
+        ? await deps.creator.exists(
+            `${mainCheckout}${WORKTREES_SUFFIX}/${pullRequest.branch}`
+          )
+        : false
+      local.set(`${pullRequest.repository}#${pullRequest.branch}`, { mainCheckout, worktreeExists })
+    })
+  )
+
+  const candidates = planCheckouts(
+    pullRequests,
+    (pullRequest) =>
+      local.get(`${pullRequest.repository}#${pullRequest.branch}`) ?? { worktreeExists: false }
+  )
+
+  const now = Date.now()
+  const picked = await vscode.window.showQuickPick(
+    candidates.map((candidate) => ({
+      label: candidate.pullRequest.title,
+      description: reviewRequestDescription(candidate, now),
+      detail: candidate.warning ?? candidate.pullRequest.branch,
+      // Only ones that can actually be created start ticked.
+      picked: candidate.ready,
+      candidate
+    })),
+    {
+      canPickMany: true,
+      title: 'Pull requests awaiting your review',
+      placeHolder: 'Ticked items get a worktree under <repo>.worktrees/',
+      matchOnDescription: true,
+      matchOnDetail: true
+    }
+  )
+  if (!picked || picked.length === 0) {
+    return
+  }
+
+  const selected = picked.map((item) => item.candidate)
+  const blocked = selected.filter((candidate) => !candidate.ready)
+  if (blocked.length === selected.length) {
+    void vscode.window.showWarningMessage(
+      'Nothing to do — every selected pull request is already checked out or its repository is not cloned.'
+    )
+    return
+  }
+
+  const outcomes = await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, title: 'Creating worktrees…' },
+    (progress) => createEach(selected, deps.creator, deps.logger, progress)
+  )
+
+  deps.onCreated()
+  reportCheckouts(outcomes)
+}
+
+/**
+ * Creates each worktree in turn.
+ *
+ * Sequential for the same reason clean-up is: `git worktree add` writes to the
+ * shared `.git/worktrees` administrative directory. Several of these may also be
+ * fetching from the same repository, where parallelism buys nothing anyway.
+ */
+async function createEach(
+  selected: readonly CheckoutCandidate[],
+  creator: GitWorktreeCreator,
+  logger: OutputLogger,
+  progress: vscode.Progress<{ message?: string }>
+): Promise<CheckoutOutcome[]> {
+  const outcomes: CheckoutOutcome[] = []
+  const actionable = selected.filter((candidate) => candidate.ready)
+
+  for (const [index, candidate] of actionable.entries()) {
+    const { pullRequest, targetPath } = candidate
+    const label = `${pullRequest.repository} #${pullRequest.number}`
+    progress.report({ message: `${index + 1}/${actionable.length} — ${label}` })
+
+    if (!targetPath) {
+      outcomes.push({ label, created: false, reason: 'no local clone' })
+      continue
+    }
+
+    try {
+      const mainCheckout = targetPath.slice(0, targetPath.indexOf(WORKTREES_SUFFIX))
+      await creator.create(mainCheckout, pullRequest.branch, targetPath)
+      logger.info(`created worktree ${targetPath}`)
+      outcomes.push({ label, created: true, path: targetPath })
+    } catch (error) {
+      const reason =
+        error instanceof BranchAlreadyCheckedOutError
+          ? 'branch already checked out in another worktree'
+          : describeError(error)
+      logger.info(`could not create worktree for ${label}: ${reason}`)
+      outcomes.push({ label, created: false, reason })
+    }
+  }
+
+  return outcomes
+}
+
+/** Says what happened, offering to open a single new worktree straight away. */
+function reportCheckouts(outcomes: readonly CheckoutOutcome[]): void {
+  const created = outcomes.filter((outcome) => outcome.created)
+  const failed = outcomes.filter((outcome) => !outcome.created)
+  const summary = summariseCheckouts(outcomes)
+
+  if (failed.length > 0) {
+    void vscode.window
+      .showWarningMessage(summary, 'Show Details')
+      .then((choice) => {
+        if (choice) {
+          void vscode.window.showWarningMessage(summary, {
+            modal: true,
+            detail: failed.map((outcome) => `${outcome.label} — ${outcome.reason}`).join('\n')
+          })
+        }
+      })
+    return
+  }
+
+  // One worktree has an obvious next step; several do not.
+  const single = created.length === 1 ? created[0] : undefined
+  void vscode.window
+    .showInformationMessage(summary, ...(single ? ['Open in New Window'] : []))
+    .then((choice) => {
+      if (choice && single?.path) {
+        void vscode.commands.executeCommand(
+          'vscode.openFolder',
+          vscode.Uri.file(single.path),
+          { forceNewWindow: true }
+        )
+      }
+    })
+}
+
 /**
  * Offers every worktree in a repository that has gone quiet, and removes the
  * ones you tick.

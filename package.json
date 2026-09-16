@@ -2,7 +2,7 @@
   "name": "worktree-watcher",
   "displayName": "Worktree Watcher",
   "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
-  "version": "0.24.0",
+  "version": "0.25.0",
   "publisher": "jeremyheritage",
   "license": "MIT",
   "engines": {
@@ -117,6 +117,12 @@
         "icon": "$(clear-all)"
       },
       {
+        "command": "worktreeWatcher.checkOutReviewRequests",
+        "title": "Check Out Review Requests…",
+        "category": "Worktrees",
+        "icon": "$(git-pull-request-go-to-changes)"
+      },
+      {
         "command": "worktreeWatcher.connectTeamCity",
         "title": "Connect to TeamCity…",
         "category": "Worktrees",
@@ -187,6 +193,11 @@
         }
       ],
       "view/title": [
+        {
+          "command": "worktreeWatcher.checkOutReviewRequests",
+          "when": "view == worktreeWatcher.tree && config.worktreeWatcher.github.enabled",
+          "group": "navigation@0"
+        },
         {
           "command": "worktreeWatcher.refresh",
           "when": "view == worktreeWatcher.tree",
@@ -326,6 +337,19 @@
           "type": "string",
           "default": "",
           "description": "GitHub organisation that owns the repositories. Pull request status stays off until this is set."
+        },
+        "worktreeWatcher.reviewRequests.scope": {
+          "type": "string",
+          "enum": [
+            "team",
+            "personal"
+          ],
+          "enumDescriptions": [
+            "Include pull requests where a team you belong to was asked to review. Right when CODEOWNERS assigns reviews to squad teams.",
+            "Only pull requests that name you personally. Matches nothing where review requests go to teams."
+          ],
+          "default": "team",
+          "markdownDescription": "Whose review requests **Check Out Review Requests…** lists. `team` maps to GitHub’s `review-requested:@me`, `personal` to `user-review-requested:@me` — these are different queries, and the personal one excludes requests made to a team you belong to."
         },
         "worktreeWatcher.github.pollMinutes": {
           "type": "number",

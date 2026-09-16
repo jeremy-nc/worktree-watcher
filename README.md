@@ -109,6 +109,7 @@ timer alone.
 | `worktreeWatcher.github.enabled` | `true` | Turn the feature off entirely. |
 | `worktreeWatcher.github.organisation` | `acme` | Org that owns the repos. |
 | `worktreeWatcher.github.pollMinutes` | `5` | Minutes between polls. |
+| `worktreeWatcher.reviewRequests.scope` | `team` | `team` includes requests to your teams; `personal` only names you. |
 
 Branch and repository names are validated against `^[A-Za-z0-9._\-/]+$` before
 going into the query — anything else is dropped rather than escaped, since a git
@@ -420,6 +421,83 @@ attribution fell back to guessing by directory, which is wrong exactly when seve
 sessions share one. Transcripts are named by session id, so the question never
 arises. The only thing processes could add is liveness — whether a quiet session is
 still running — which the panel does not currently need.
+
+## Checking out review requests
+
+The panel's title bar has **Check Out Review Requests…**: it lists every open
+pull request in the organisation waiting on your review and creates worktrees
+for the ones you tick.
+
+```
+Pull requests awaiting your review
+Ticked items get a worktree under <repo>.worktrees/
+
+ [x] CORE-558: extend agent VM lifecycle IAM   upside-ci-build-config #371 · nc-apark · opened today
+ [x] Bump the kotlin group with 2 updates      nct-eventarc-outbox #116 · dependabot · 3 days old
+ [ ] ALR-6762: Tune Cloud Task attempt delays  upside #20970 · augmentcode · opened today
+     ⚠ upside is not cloned under the watched root
+```
+
+This is the inverse of everything else here. Elsewhere worktrees are known and
+their pull requests are looked up; here the pull requests are known and the
+worktrees do not exist yet.
+
+**Not filtered by author.** Dependabot dominates a review queue by volume, but a
+colleague's pull request needs a checkout for exactly the same reason, and
+filtering to bots would hide the ones that matter most. The author is shown on
+each row so the two are easy to tell apart.
+
+### Team requests, or only yours
+
+GitHub draws a line the obvious query does not:
+
+| Qualifier | Matches |
+|---|---|
+| `review-requested:@me` | including where a **team** you belong to was asked |
+| `user-review-requested:@me` | only pull requests naming **you** personally |
+
+Where CODEOWNERS routes reviews to squad teams, the personal form matches
+**nothing at all** — measured on this organisation, 33 against 0. The default is
+therefore the team-inclusive form; `worktreeWatcher.reviewRequests.scope` narrows
+it.
+
+### Creating the worktree
+
+Two git steps, both needed:
+
+```
+git fetch origin <branch>
+git worktree add --track -b <branch> <repo>.worktrees/<branch> origin/<branch>
+```
+
+The fetch is not optional. A plain clone only has remote-tracking refs for
+branches that existed when it was cloned, so a branch opened since then is not
+there at all and `worktree add` fails on an unknown ref. The `--track -b` form
+then creates the local branch and sets its upstream together, leaving the
+worktree ready to push from.
+
+If a local branch of that name already exists — left behind by a worktree since
+removed — that fails, and it falls back to checking the existing branch out. If
+the branch is checked out in *another* worktree, git refuses and that is reported
+rather than worked around.
+
+Branch names are used verbatim, so `dependabot/gradle/org.flywaydb-11.1.0` nests
+three directories deep. The convention places no meaning on depth, and flattening
+the separators would collide two branches differing only in where their slashes
+fall.
+
+### What it will not do
+
+| | |
+|---|---|
+| Clone a missing repository | Only `<root>/<repo>` is supported; anything else reads as not cloned |
+| Recreate an existing worktree | Listed, but unticked |
+| Run in parallel | `git worktree add` writes to the shared `.git/worktrees` admin directory |
+| Poll in the background | It runs on click. A review queue that refreshed itself would be a notification, which this panel is not |
+
+A pull request whose repository is not cloned still appears, held back by its
+warning — "why is that one missing" is a worse question to leave the reader with
+than one unticked row.
 
 ## Removing a worktree
 

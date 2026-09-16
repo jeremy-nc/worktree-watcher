@@ -7,6 +7,7 @@ import { ClaudeSession, Scan } from '../domain/model'
 import { BranchRef, PullRequest } from '../domain/pullRequest'
 import { WorktreeStatus } from '../domain/removal'
 import { Activity } from '../domain/activity'
+import { ReviewScope } from '../domain/reviewRequests'
 import { Build } from '../domain/build'
 
 export interface Disposable {
@@ -40,6 +41,8 @@ export interface Settings {
   readonly showEmptyRepositories: boolean
   /** Idle days after which clean-up offers a worktree for removal. */
   readonly staleDays: number
+  /** Whose review requests to list. */
+  readonly reviewScope: ReviewScope
   onDidChange(listener: () => void): Disposable
 }
 

@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import * as vscode from 'vscode'
 
 import { DEFAULT_STALE_DAYS } from '../domain/cleanUp'
+import { DEFAULT_REVIEW_SCOPE, ReviewScope } from '../domain/reviewRequests'
 import { DEFAULT_DEPLOY_ENVIRONMENT, DEFAULT_DEPLOY_PREFERENCE } from '../domain/deploy'
 import {
   ActivitySettings,
@@ -112,6 +113,12 @@ export class VscodeSettings implements Settings {
 
   get staleDays(): number {
     return Math.max(1, this.read<number>('cleanUp.staleDays', DEFAULT_STALE_DAYS))
+  }
+
+  get reviewScope(): ReviewScope {
+    return this.read<string>('reviewRequests.scope', DEFAULT_REVIEW_SCOPE) === 'personal'
+      ? 'personal'
+      : 'team'
   }
 
   onDidChange(listener: () => void): Disposable {
