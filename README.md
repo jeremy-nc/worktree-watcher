@@ -449,15 +449,28 @@ colleague's pull request needs a checkout for exactly the same reason, and
 filtering to bots would hide the ones that matter most. The author is shown on
 each row so the two are easy to tell apart.
 
-**The count sits beside the panel title** as `5 PRs awaiting review`, via
-`TreeView.description`. A numeric badge was tried first and removed: a bare number
-on a panel called Worktrees reads as a worktree count, and VS Code offers no way
-to put one on the button itself. The text says what it counts.
+**The count lives in the status bar** as `$(git-pull-request) 5 PRs awaiting
+review`, carrying the same command as the title-bar button so either opens the
+list. Hidden at zero.
 
-**Clicking the button does not search.** The same poll that keeps that text honest
-holds the answer, so the list opens from memory. It only hits the network when
-nothing has been polled yet — the panel has never been open, or the last poll
-failed.
+Two earlier attempts were removed. A **numeric badge** reads as a worktree count
+on a panel called Worktrees. `TreeView.description` says what it counts, but only
+while you are looking at the panel — which is the wrong place for something worth
+noticing when you are not. VS Code offers no way to put a number on a title-bar
+button: a `navigation` item renders its static `package.json` icon and nothing
+else, and the command `title` only ever appears as a tooltip.
+
+**Clicking does not search.** The poll behind the status bar already holds the
+answer, so the list opens from memory. It re-reads only when nothing has been
+polled yet, when the last poll failed, or when the result is older than one poll
+interval — a stale list could otherwise offer a worktree for a pull request that
+has since merged.
+
+> **Future work.** The poll stops when the Worktrees panel is hidden, so with the
+> panel closed the status bar shows the last count seen rather than the current
+> one. Clicking still re-reads, so acting on a stale number never acts on stale
+> data. Polling while the window is open, regardless of the panel, would fix the
+> display.
 
 **A codicon marks who opened it** — `$(robot)` against `$(account)`, taken from
 GitHub typing the author as `Bot` rather than `User`. A bot login is otherwise

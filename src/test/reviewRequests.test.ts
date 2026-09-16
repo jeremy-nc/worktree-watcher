@@ -310,6 +310,38 @@ describe('ReviewRequestStore', () => {
     store.dispose()
   })
 
+  it('re-reads rather than trusting a result older than a poll interval', async () => {
+    let calls = 0
+    let clock = 1_000
+    const store = new ReviewRequestStore(
+      {
+        fetch: async () => {
+          calls += 1
+          return [pr()]
+        }
+      },
+      settings,
+      logger,
+      () => clock
+    )
+    const handle = store.activate()
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(calls, 1)
+
+    // Still inside the 5-minute poll window: the click reads from memory.
+    clock += 60_000
+    await store.ensure()
+    assert.equal(calls, 1, 'a fresh result should be served without a search')
+
+    // Past it — the panel could have been closed for an hour, and a pull request
+    // that has since merged must not be offered as a worktree.
+    clock += 10 * 60_000
+    await store.ensure()
+    assert.equal(calls, 2, 'a stale result must not be served to a click')
+    handle.dispose()
+    store.dispose()
+  })
+
   it('fetches on demand when nothing has been polled yet', async () => {
     let calls = 0
     const store = new ReviewRequestStore(

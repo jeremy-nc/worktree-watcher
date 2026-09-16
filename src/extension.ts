@@ -34,7 +34,6 @@ import {
   QueryOptions,
   ReviewRequest,
   authorIcon,
-  describeReviewQueue,
   candidateDescription as reviewRequestDescription,
   planCheckouts,
   summariseCheckouts
@@ -60,6 +59,7 @@ import {
   VscodeSettings
 } from './infrastructure/vscodeSettings'
 import { VscodeDirectoryWatcher } from './infrastructure/vscodeDirectoryWatcher'
+import { ReviewRequestStatusBar } from './presentation/reviewRequestStatusBar'
 import { Node, WorktreeTreeProvider } from './presentation/worktreeTreeProvider'
 
 const VIEW_ID = 'worktreeWatcher.tree'
@@ -167,16 +167,12 @@ export function activate(context: vscode.ExtensionContext): void {
     tree.message = state.status === 'error' ? `Scan failed: ${state.error}` : undefined
   })
 
-  // Text beside the view title rather than a numeric badge: the number alone
-  // said nothing about what it counted, and read as a worktree count.
-  reviewRequests.onDidChange((state) => {
-    tree.description = describeReviewQueue(state.pullRequests.length)
-  })
-
   context.subscriptions.push(
     tree,
     store,
     logger,
+    // Same command as the title-bar button, so either route opens the list.
+    new ReviewRequestStatusBar(reviewRequests, 'worktreeWatcher.checkOutReviewRequests'),
     new vscode.Disposable(() => active?.dispose()),
     pullRequests,
     activities,

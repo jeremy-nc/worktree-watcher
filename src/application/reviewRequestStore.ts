@@ -25,10 +25,10 @@ export interface ReviewRequestFetcher {
  * knows nothing about worktrees and asks what is waiting on you — most of which
  * has no worktree at all.
  *
- * Header text has to be right without being asked for, so this polls. It is one
- * search per cycle regardless of how many repositories exist, and only while the
- * panel is on screen. Opening the checkout list then reads this result rather
- * than repeating the search.
+ * The status bar count has to be right without being asked for, so this polls.
+ * It is one search per cycle regardless of how many repositories exist, and only
+ * while the panel is on screen — see the README's future work on that. Opening
+ * the checkout list reads this result rather than repeating the search.
  */
 export class ReviewRequestStore implements Disposable {
   private readonly changed = new Emitter<ReviewRequestState>()
@@ -44,7 +44,9 @@ export class ReviewRequestStore implements Disposable {
   constructor(
     private readonly source: ReviewRequestFetcher,
     private readonly settings: GitHubSettings,
-    private readonly logger: Logger
+    private readonly logger: Logger,
+    /** Injectable so staleness can be tested without waiting minutes. */
+    private readonly now: () => number = Date.now
   ) {}
 
   get current(): ReviewRequestState {
@@ -77,16 +79,22 @@ export class ReviewRequestStore implements Disposable {
   /**
    * The current list, fetching only if there is not already one.
    *
-   * The polling that keeps the header text honest has already paid for this
+   * The polling that keeps the status bar honest has already paid for this
    * query, so opening the list should be instant. Waiting on a second identical
    * search — several seconds against GitHub — while holding the answer in memory
    * is the kind of thing that makes a button feel broken.
    *
-   * Falls through to a live fetch only when nothing has been polled yet: the
-   * panel was hidden, the first poll is still in flight, or the last one failed.
+   * Falls through to a live fetch when nothing has been polled yet, when the
+   * last poll failed, or when what was polled has gone stale.
+   *
+   * Staleness matters because polling stops when the panel is hidden. A result
+   * from an hour ago could offer a worktree for a pull request that has since
+   * merged, so anything older than one poll interval is re-read rather than
+   * trusted — the case this is optimising for is a click moments after a poll,
+   * not a click hours later.
    */
   async ensure(): Promise<readonly ReviewRequest[]> {
-    if (this.state.status === 'ready') {
+    if (this.state.status === 'ready' && this.fresh()) {
       return this.state.pullRequests
     }
     // `force`, because polling stops when the panel is hidden and an explicit
@@ -103,6 +111,14 @@ export class ReviewRequestStore implements Disposable {
     this.changed.dispose()
   }
 
+  /** True when the last successful poll is still within one poll interval. */
+  private fresh(): boolean {
+    if (this.state.fetchedAt === undefined) {
+      return false
+    }
+    return this.now() - this.state.fetchedAt < Math.max(1, this.settings.pollMinutes) * 60_000
+  }
+
   private async poll(force = false): Promise<void> {
     if ((this.consumers === 0 && !force) || this.inFlight) {
       return
@@ -116,7 +132,7 @@ export class ReviewRequestStore implements Disposable {
     try {
       const pullRequests = await this.source.fetch()
       this.failures = 0
-      this.publish({ status: 'ready', pullRequests, fetchedAt: Date.now() })
+      this.publish({ status: 'ready', pullRequests, fetchedAt: this.now() })
       this.logger.info(`review requests: ${pullRequests.length} awaiting you`)
     } catch (error) {
       this.failures += 1
@@ -141,6 +157,10 @@ export class ReviewRequestStore implements Disposable {
     const base = Math.max(1, this.settings.pollMinutes) * 60_000
     const delay = Math.min(base * 4 ** Math.min(this.failures, 4), MAX_BACKOFF_MS)
     this.timer = setTimeout(() => void this.poll(), this.failures > 0 ? delay : base)
+    // A background poll is not a reason to keep the process alive. Without this
+    // the timer re-arms forever, and a test that fails before `dispose` hangs
+    // the whole run rather than reporting.
+    this.timer.unref?.()
   }
 
   private publish(state: ReviewRequestState): void {
