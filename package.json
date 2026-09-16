@@ -2,7 +2,7 @@
   "name": "worktree-watcher",
   "displayName": "Worktree Watcher",
   "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
-  "version": "0.31.0",
+  "version": "0.32.0",
   "publisher": "jeremyheritage",
   "license": "MIT",
   "engines": {
@@ -351,6 +351,11 @@
           "default": "~/Code/dependabot",
           "scope": "machine-overridable",
           "markdownDescription": "Scratch directory the **Open a Claude session** button uses for bot pull requests. Created if missing. Supports `~`, `${userHome}` and `${workspaceFolder}`."
+        },
+        "worktreeWatcher.reviewRequests.sessionPrompt": {
+          "type": "string",
+          "default": "Pull ${url} (${repository}, branch ${branch}) following the worktree conventions.",
+          "markdownDescription": "Opening message for a session started from a bot pull request. Substitutes `${url}`, `${repository}`, `${branch}`, `${number}` and `${title}`.\n\n`${url}` is also how the session is recognised as belonging to that pull request next time, so if your wording leaves it out it is appended anyway."
         },
         "worktreeWatcher.github.pollMinutes": {
           "type": "number",

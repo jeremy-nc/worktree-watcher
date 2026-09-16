@@ -3,7 +3,11 @@ import * as path from 'node:path'
 import * as vscode from 'vscode'
 
 import { DEFAULT_STALE_DAYS } from '../domain/cleanUp'
-import { DEFAULT_REVIEW_SCOPE, ReviewScope } from '../domain/reviewRequests'
+import {
+  DEFAULT_REVIEW_SCOPE,
+  DEFAULT_SESSION_PROMPT,
+  ReviewScope
+} from '../domain/reviewRequests'
 import { DEFAULT_DEPLOY_ENVIRONMENT, DEFAULT_DEPLOY_PREFERENCE } from '../domain/deploy'
 import {
   ActivitySettings,
@@ -127,6 +131,11 @@ export class VscodeSettings implements Settings {
 
   get excludeReviewedByMe(): boolean {
     return this.read<boolean>('reviewRequests.excludeReviewed', true)
+  }
+
+  /** Opening message for a session started against a pull request. */
+  get sessionPrompt(): string {
+    return this.read<string>('reviewRequests.sessionPrompt', DEFAULT_SESSION_PROMPT)
   }
 
   /** Scratch directory for working on dependency-bump pull requests. */

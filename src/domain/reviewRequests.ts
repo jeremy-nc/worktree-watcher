@@ -249,21 +249,43 @@ export function describeReviewQueue(count: number): string | undefined {
 }
 
 /**
+ * Default opening message. `${url}`, `${repository}`, `${branch}` and `${number}`
+ * are substituted.
+ */
+export const DEFAULT_SESSION_PROMPT =
+  'Pull ${url} (${repository}, branch ${branch}) following the worktree conventions.'
+
+/**
  * The opening message for a session started against a pull request.
  *
- * The URL is in it for two reasons: it tells Claude which pull request this is,
- * and it is the marker that later identifies the session as belonging to this
- * one. Branch names cannot serve as that marker — Dependabot opens identically
- * named branches in every repository it touches, so a branch would match the
- * wrong repository's session.
+ * The URL does double duty: it tells Claude which pull request this is, and it
+ * is the marker that later identifies the session as belonging to this one. So
+ * a template that leaves it out gets it appended — a customised prompt should
+ * change the wording, not quietly break the ability to find the session again.
+ *
+ * Branch names cannot serve as that marker: Dependabot opens identically named
+ * branches in every repository it touches, so a branch would match the wrong
+ * repository's session.
  */
-export function botSessionPrompt(pullRequest: ReviewRequest): string {
-  return [
-    `Review ${pullRequest.url}`,
-    `(${pullRequest.repository}, branch ${pullRequest.branch}).`,
-    'Use the /worktree skill to create a worktree for that branch following the',
-    '~/Code conventions, check the branch out there, and review the change.'
-  ].join(' ')
+export function botSessionPrompt(
+  pullRequest: ReviewRequest,
+  template: string = DEFAULT_SESSION_PROMPT
+): string {
+  const filled = fillTemplate(template.trim() || DEFAULT_SESSION_PROMPT, pullRequest)
+  return filled.includes(pullRequest.url) ? filled : `${filled} — ${pullRequest.url}`
+}
+
+function fillTemplate(template: string, pullRequest: ReviewRequest): string {
+  const values: Record<string, string> = {
+    url: pullRequest.url,
+    repository: pullRequest.repository,
+    branch: pullRequest.branch,
+    number: String(pullRequest.number),
+    title: pullRequest.title
+  }
+  // An unknown placeholder is left as written rather than blanked, so a typo is
+  // visible in the prompt instead of silently losing text.
+  return template.replace(/\$\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole)
 }
 
 /**

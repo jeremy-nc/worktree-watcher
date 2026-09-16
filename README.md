@@ -113,6 +113,7 @@ timer alone.
 | `worktreeWatcher.reviewRequests.excludeDrafts` | `true` | Leave out drafts. |
 | `worktreeWatcher.reviewRequests.excludeReviewed` | `true` | Leave out ones you have already reviewed. |
 | `worktreeWatcher.reviewRequests.botWorkspace` | `~/Code/dependabot` | Scratch directory for bot pull requests. |
+| `worktreeWatcher.reviewRequests.sessionPrompt` | `Pull ${url} …` | Opening message for a started session. |
 
 Branch and repository names are validated against `^[A-Za-z0-9._\-/]+$` before
 going into the query — anything else is dropped rather than escaped, since a git
@@ -560,11 +561,23 @@ A new conversation opens with the pull request's URL in its first message, and
 that URL is the marker a later visit matches on:
 
 ```
-Review https://github.com/acme/widget-service/pull/627 (widget-service, branch
-dependabot/gradle/org.flywaydb-11.1.0). Use the /worktree skill to create a
-worktree for that branch following the ~/Code conventions, check the branch out
-there, and review the change.
+Pull https://github.com/acme/widget-service/pull/627 (widget-service, branch
+dependabot/gradle/org.flywaydb-11.1.0) following the worktree conventions.
 ```
+
+`worktreeWatcher.reviewRequests.sessionPrompt` is the template, substituting
+`${url}`, `${repository}`, `${branch}`, `${number}` and `${title}`. A template
+that leaves `${url}` out gets it appended:
+
+```
+Pull this branch following the worktree conventions.
+  → Pull this branch following the worktree conventions. — https://github.com/…/627
+```
+
+That is not tidiness. The URL is what makes the session findable next time, so
+dropping it would turn every subsequent visit into case two and quietly start a
+second conversation for the same pull request. Changing the wording should not
+be able to break that.
 
 The URL, not the branch. Dependabot opens identically named branches in every
 repository it touches, so a branch would match the wrong repository's session —

@@ -292,6 +292,7 @@ export function activate(context: vscode.ExtensionContext): void {
         rootPath: settings.rootPath,
         organisation: gitHubSettings.organisation,
         botWorkspace: settings.botWorkspace,
+        sessionPrompt: settings.sessionPrompt,
         transcripts,
         launcher,
         logger,
@@ -474,6 +475,7 @@ async function checkOutReviewRequests(deps: {
   rootPath: string
   organisation: string
   botWorkspace: string
+  sessionPrompt: string
   transcripts: ClaudeTranscriptVerifier
   launcher: ClaudeCodeLauncher
   logger: OutputLogger
@@ -552,6 +554,7 @@ async function checkOutReviewRequests(deps: {
     openBotSession: (pullRequest) =>
       openBotWorkspaceSession(pullRequest, botSessions.get(pullRequest.url) ?? [], {
         workspace: deps.botWorkspace,
+        prompt: deps.sessionPrompt,
         transcripts: deps.transcripts,
         launcher: deps.launcher,
         logger: deps.logger
@@ -596,6 +599,7 @@ async function openBotWorkspaceSession(
   sessions: readonly ClaudeSession[],
   deps: {
     workspace: string
+    prompt: string
     transcripts: ClaudeTranscriptVerifier
     launcher: ClaudeCodeLauncher
     logger: OutputLogger
@@ -631,7 +635,7 @@ async function openBotWorkspaceSession(
   // with the pull request so the new conversation knows what it is for — and so
   // the next visit can find it by that same marker.
   deps.logger.info(`starting a session for ${pullRequest.url}`)
-  await deps.launcher.start(botSessionPrompt(pullRequest), deps.workspace)
+  await deps.launcher.start(botSessionPrompt(pullRequest, deps.prompt), deps.workspace)
 }
 
 /** As `chooseSession`, but over sessions already in hand. */

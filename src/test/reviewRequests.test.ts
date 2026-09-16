@@ -146,20 +146,44 @@ describe('botSessionTooltip', () => {
 })
 
 describe('botSessionPrompt', () => {
-  it('leads with the pull request URL, which is also the marker', () => {
-    const prompt = botSessionPrompt(pr({ url: 'https://github.com/acme/widget-service/pull/627' }))
-    assert.match(prompt, /^Review https:\/\/github\.com\/acme\/widget-service\/pull\/627/)
+  it('fills the default template', () => {
+    assert.equal(
+      botSessionPrompt(pr()),
+      'Pull https://github.com/acme/widget-service/pull/627 ' +
+        '(widget-service, branch dependabot/gradle/org.flywaydb-11.1.0) ' +
+        'following the worktree conventions.'
+    )
   })
 
-  it('names the repository and branch so the worktree can be made', () => {
-    const prompt = botSessionPrompt(pr())
-    assert.match(prompt, /widget-service/)
-    assert.match(prompt, /dependabot\/gradle\/org\.flywaydb-11\.1\.0/)
+  it('substitutes every placeholder a template may use', () => {
+    assert.equal(
+      botSessionPrompt(pr(), '${repository}#${number} ${branch} ${title} ${url}'),
+      'widget-service#627 dependabot/gradle/org.flywaydb-11.1.0 ' +
+        'Bump org.flywaydb from 11.0.0 to 11.1.0 ' +
+        'https://github.com/acme/widget-service/pull/627'
+    )
   })
 
-  it('asks for the worktree skill and the conventions', () => {
-    assert.match(botSessionPrompt(pr()), /\/worktree skill/)
-    assert.match(botSessionPrompt(pr()), /~\/Code conventions/)
+  it('appends the URL when a custom template leaves it out, so the session stays findable', () => {
+    const prompt = botSessionPrompt(pr(), 'Pull this branch following the worktree conventions.')
+    assert.equal(
+      prompt,
+      'Pull this branch following the worktree conventions. — ' +
+        'https://github.com/acme/widget-service/pull/627'
+    )
+  })
+
+  it('does not append twice when the template already has the URL', () => {
+    const prompt = botSessionPrompt(pr(), 'Look at ${url} please')
+    assert.equal(prompt.match(/pull\/627/g)?.length, 1)
+  })
+
+  it('falls back to the default when the template is blank', () => {
+    assert.equal(botSessionPrompt(pr(), '   '), botSessionPrompt(pr()))
+  })
+
+  it('leaves an unknown placeholder visible rather than blanking it', () => {
+    assert.match(botSessionPrompt(pr(), 'Do ${nonsense} with ${url}'), /\$\{nonsense\}/)
   })
 })
 

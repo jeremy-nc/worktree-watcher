@@ -47,6 +47,8 @@ export interface Settings {
   readonly excludeReviewedByMe: boolean
   /** Scratch directory for working on dependency-bump pull requests. */
   readonly botWorkspace: string
+  /** Opening message for a session started against a pull request. */
+  readonly sessionPrompt: string
   onDidChange(listener: () => void): Disposable
 }
 
