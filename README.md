@@ -424,7 +424,7 @@ still running — which the panel does not currently need.
 ## Removing a worktree
 
 Right-click a worktree → **Remove Worktree…**. Deliberately **not** an inline icon:
-it would sit one misclick from *Open in New Window*, which gets used constantly.
+a destructive action should not sit one misclick from the everyday ones.
 
 The confirmation carries the facts rather than asking a generic question, because
 what matters differs per worktree:
@@ -732,13 +732,19 @@ absolute path to your other machines.
 
 **Repository rows** have an inline **Open in New Window** that opens the
 `<repo>.worktrees/` container — one window holding every worktree for that repo —
-and **Clean Up Idle Worktrees…**. The repo's main checkout is the `main` row
-beneath it, with its own button.
+and **Clean Up Idle Worktrees…**.
 
-**Worktree rows**: **Open Claude Session** and **Open in New Window** inline; the
-context menu adds **Add Folder to Workspace**, **Reveal in Finder**, **Copy Path**,
-**Open Pull Request**, **Open Build in TeamCity**, **Resume Claude Session in
-Terminal**, **Copy Claude Session ID**, and **Remove Worktree…**.
+**Worktree rows** keep their inline icons for the two actions worth a single
+click: **Open Claude Session**, and **Trigger Deploy** when TeamCity is on.
+Everything else is one right-click away — **Open in New Window**, **Add Folder to
+Workspace**, **Reveal in Finder**, **Copy Path**, **Open Pull Request**, **Open
+Build in TeamCity**, **Resume Claude Session in Terminal**, **Copy Claude Session
+ID**, and **Remove Worktree…**.
+
+Opening a worktree in a new window is deliberately *not* inline. Rows already
+carry a lot — branch, PR, review, build, activity — and an icon earns its place
+by being the thing you reach for most, which for a worktree is its Claude session,
+not another window.
 
 ## Next steps this is built for
 
