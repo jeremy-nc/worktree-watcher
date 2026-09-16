@@ -129,6 +129,11 @@ export class VscodeSettings implements Settings {
     return this.read<boolean>('reviewRequests.excludeReviewed', true)
   }
 
+  /** Scratch directory for working on dependency-bump pull requests. */
+  get botWorkspace(): string {
+    return expandPath(this.read<string>('reviewRequests.botWorkspace', '~/Code/dependabot'))
+  }
+
   onDidChange(listener: () => void): Disposable {
     return vscode.workspace.onDidChangeConfiguration((event) => {
       if (event.affectsConfiguration(SECTION)) {

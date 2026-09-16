@@ -1,3 +1,4 @@
+import { promises as fs } from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import * as vscode from 'vscode'
@@ -44,7 +45,11 @@ import {
   GitWorktreeCreator
 } from './infrastructure/gitWorktreeCreator'
 import { chooseDeployTargets, deployProjectOf, describeDeploy, DeployTarget } from './domain/deploy'
-import { ClaudeCodeLauncher, resumeInTerminal } from './infrastructure/claudeCodeLauncher'
+import {
+  ClaudeCodeLauncher,
+  resumeInTerminal,
+  startClaudeInTerminal
+} from './infrastructure/claudeCodeLauncher'
 import { ClaudeTranscriptVerifier } from './infrastructure/claudeTranscriptVerifier'
 import { PendingSessionStore } from './infrastructure/pendingSessionStore'
 import { FsWorktreeScanner } from './infrastructure/fsWorktreeScanner'
@@ -294,6 +299,9 @@ export function activate(context: vscode.ExtensionContext): void {
         creator: new GitWorktreeCreator(),
         rootPath: settings.rootPath,
         organisation: gitHubSettings.organisation,
+        botWorkspace: settings.botWorkspace,
+        transcripts,
+        launcher,
         logger,
         onCreated: () => {
           store.refresh()
@@ -473,6 +481,9 @@ async function checkOutReviewRequests(deps: {
   creator: GitWorktreeCreator
   rootPath: string
   organisation: string
+  botWorkspace: string
+  transcripts: ClaudeTranscriptVerifier
+  launcher: ClaudeCodeLauncher
   logger: OutputLogger
   onCreated: () => void
 }): Promise<void> {
@@ -527,31 +538,20 @@ async function checkOutReviewRequests(deps: {
       local.get(`${pullRequest.repository}#${pullRequest.branch}`) ?? { worktreeExists: false }
   )
 
-  const now = Date.now()
-  const picked = await vscode.window.showQuickPick(
-    candidates.map((candidate) => ({
-      // The codicon marks bot against human at a glance, which is the first
-      // thing you sort a review queue by.
-      label: `${authorIcon(candidate.pullRequest)}  ${candidate.pullRequest.title}`,
-      description: reviewRequestDescription(candidate, now),
-      detail: candidate.warning ?? candidate.pullRequest.branch,
-      // Only ones that can actually be created start ticked.
-      picked: candidate.ready,
-      candidate
-    })),
-    {
-      canPickMany: true,
-      title: 'Pull requests awaiting your review',
-      placeHolder: 'Ticked items get a worktree under <repo>.worktrees/',
-      matchOnDescription: true,
-      matchOnDetail: true
-    }
-  )
-  if (!picked || picked.length === 0) {
+  const selected = await pickReviewRequests(candidates, {
+    botWorkspace: deps.botWorkspace,
+    logger: deps.logger,
+    openBotSession: (pullRequest) =>
+      openBotWorkspaceSession(pullRequest, {
+        workspace: deps.botWorkspace,
+        transcripts: deps.transcripts,
+        launcher: deps.launcher,
+        logger: deps.logger
+      })
+  })
+  if (selected.length === 0) {
     return
   }
-
-  const selected = picked.map((item) => item.candidate)
   const blocked = selected.filter((candidate) => !candidate.ready)
   if (blocked.length === selected.length) {
     void vscode.window.showWarningMessage(
@@ -567,6 +567,180 @@ async function checkOutReviewRequests(deps: {
 
   deps.onCreated()
   reportCheckouts(outcomes)
+}
+
+
+
+/**
+ * Opens a Claude session in the workspace kept for dependency bumps.
+ *
+ * The same shape as the worktree row's **Open Claude Session**: sessions for the
+ * directory, one resolved straight away, several offered as a list. The only
+ * difference is where the sessions come from — a worktree has a git sidecar, a
+ * plain directory has its Claude project folder.
+ *
+ * The workspace is created if missing. It is a scratch directory by design: a
+ * bot's pull request is a dependency bump to be judged, and the repository it
+ * belongs to is reached through a worktree from here, not by working in place.
+ */
+async function openBotWorkspaceSession(
+  pullRequest: ReviewRequest,
+  deps: {
+    workspace: string
+    transcripts: ClaudeTranscriptVerifier
+    launcher: ClaudeCodeLauncher
+    logger: OutputLogger
+  }
+): Promise<void> {
+  try {
+    await fs.mkdir(deps.workspace, { recursive: true })
+  } catch (error) {
+    void vscode.window.showErrorMessage(
+      `Could not create ${deps.workspace}: ${describeError(error)}`
+    )
+    return
+  }
+
+  const sessions = await deps.transcripts.sessionsIn(deps.workspace)
+  deps.logger.info(`bot workspace ${deps.workspace}: ${sessions.length} session(s)`)
+
+  const session = await chooseSessionFrom(
+    sessions,
+    deps.transcripts,
+    `Which session for ${pullRequest.repository} #${pullRequest.number}?`
+  )
+
+  if (session) {
+    await deps.launcher.open(session.id, deps.workspace)
+    return
+  }
+
+  if (sessions.length > 0) {
+    // There were sessions and the list was dismissed — that is a cancel, not a
+    // request for a new one.
+    return
+  }
+
+  // Nothing has ever run here. A session cannot be created by id, so the window
+  // opens and Claude is started in a terminal there.
+  await vscode.commands.executeCommand(
+    'vscode.openFolder',
+    vscode.Uri.file(deps.workspace),
+    { forceNewWindow: true }
+  )
+  startClaudeInTerminal(deps.workspace)
+}
+
+/** As `chooseSession`, but over sessions already in hand. */
+async function chooseSessionFrom(
+  sessions: readonly ClaudeSession[],
+  transcripts: ClaudeTranscriptVerifier,
+  placeHolder: string
+): Promise<ClaudeSession | undefined> {
+  if (sessions.length <= 1) {
+    return sessions[0]
+  }
+
+  const titles = await transcripts.titles(sessions.map((session) => session.id))
+  const picked = await vscode.window.showQuickPick(
+    sessions.map((session, index) => ({
+      label: titles.get(session.id) ?? session.id,
+      description: index === 0 ? 'most recent' : undefined,
+      detail: [session.id, session.at].filter(Boolean).join('  ·  '),
+      session
+    })),
+    { placeHolder, matchOnDetail: true, matchOnDescription: true }
+  )
+  return picked?.session
+}
+
+/** Per-item actions. Identity matters — the handler compares by reference. */
+const OPEN_ON_GITHUB: vscode.QuickInputButton = {
+  iconPath: new vscode.ThemeIcon('link-external'),
+  tooltip: 'Open on GitHub'
+}
+const OPEN_BOT_SESSION: vscode.QuickInputButton = {
+  iconPath: new vscode.ThemeIcon('comment-discussion'),
+  tooltip: 'Open a Claude session in the bot workspace'
+}
+
+interface ReviewQuickPickItem extends vscode.QuickPickItem {
+  readonly candidate: CheckoutCandidate
+}
+
+/**
+ * The checklist, with per-item buttons.
+ *
+ * Built with `createQuickPick` rather than `showQuickPick` because item buttons
+ * are only rendered by the former — the typings say so outright. The extra cost
+ * is owning the lifetime, which is why everything resolves through one promise
+ * and disposes in `onDidHide`.
+ *
+ * The buttons exist because the row itself cannot carry these actions: with
+ * `canSelectMany`, clicking a row toggles its checkbox. Anything else has to be
+ * a button.
+ */
+async function pickReviewRequests(
+  candidates: readonly CheckoutCandidate[],
+  deps: {
+    botWorkspace: string
+    openBotSession: (pullRequest: ReviewRequest) => Promise<void>
+    logger: OutputLogger
+  }
+): Promise<readonly CheckoutCandidate[]> {
+  const now = Date.now()
+  const quickPick = vscode.window.createQuickPick<ReviewQuickPickItem>()
+  quickPick.title = 'Pull requests awaiting your review'
+  quickPick.placeholder = 'Ticked items get a worktree under <repo>.worktrees/'
+  quickPick.canSelectMany = true
+  quickPick.matchOnDescription = true
+  quickPick.matchOnDetail = true
+
+  quickPick.items = candidates.map((candidate) => ({
+    // The codicon marks bot against human at a glance, which is the first thing
+    // you sort a review queue by.
+    label: `${authorIcon(candidate.pullRequest)}  ${candidate.pullRequest.title}`,
+    description: reviewRequestDescription(candidate, now),
+    detail: candidate.warning ?? candidate.pullRequest.branch,
+    buttons: candidate.pullRequest.authorIsBot
+      ? [OPEN_ON_GITHUB, OPEN_BOT_SESSION]
+      : // The bot workspace is for dependency bumps; a colleague's pull request
+        // belongs in its own repository's worktree, not a shared scratch folder.
+        [OPEN_ON_GITHUB],
+    candidate
+  }))
+  // Only ones that can actually be created start ticked.
+  quickPick.selectedItems = quickPick.items.filter((item) => item.candidate.ready)
+
+  return new Promise<readonly CheckoutCandidate[]>((resolve) => {
+    let accepted: readonly CheckoutCandidate[] = []
+
+    quickPick.onDidTriggerItemButton(async (event) => {
+      const { pullRequest } = event.item.candidate
+      if (event.button === OPEN_ON_GITHUB) {
+        await vscode.env.openExternal(vscode.Uri.parse(pullRequest.url))
+        return
+      }
+      if (event.button === OPEN_BOT_SESSION) {
+        // Hide first: opening a window while the picker is up leaves it
+        // stranded over the new editor.
+        quickPick.hide()
+        await deps.openBotSession(pullRequest)
+      }
+    })
+
+    quickPick.onDidAccept(() => {
+      accepted = quickPick.selectedItems.map((item) => item.candidate)
+      quickPick.hide()
+    })
+
+    quickPick.onDidHide(() => {
+      quickPick.dispose()
+      resolve(accepted)
+    })
+
+    quickPick.show()
+  })
 }
 
 /**

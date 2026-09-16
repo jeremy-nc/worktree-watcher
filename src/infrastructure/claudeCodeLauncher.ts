@@ -219,6 +219,22 @@ export function resumeInTerminal(sessionId: string, worktreePath: string): void 
   terminal.sendText(`claude --resume ${sessionId}`)
 }
 
+/**
+ * Starts a brand-new Claude session in a directory.
+ *
+ * Not `OPEN_SESSION_COMMAND`, which resumes a session *by id* — there is no id
+ * yet, and no API hands one back for a session that does not exist. The CLI is
+ * the way to create one, so a terminal it is.
+ */
+export function startClaudeInTerminal(cwd: string): void {
+  const terminal = vscode.window.createTerminal({
+    name: `claude · ${path.basename(cwd)}`,
+    cwd
+  })
+  terminal.show()
+  terminal.sendText('claude')
+}
+
 /** Claude tabs currently open, for diagnosing a duplicate. */
 function describeTabs(): string {
   const labels = vscode.window.tabGroups.all.flatMap((group) =>

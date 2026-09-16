@@ -45,6 +45,8 @@ export interface Settings {
   readonly reviewScope: ReviewScope
   readonly excludeDraftReviews: boolean
   readonly excludeReviewedByMe: boolean
+  /** Scratch directory for working on dependency-bump pull requests. */
+  readonly botWorkspace: string
   onDidChange(listener: () => void): Disposable
 }
 

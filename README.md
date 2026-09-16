@@ -112,6 +112,7 @@ timer alone.
 | `worktreeWatcher.reviewRequests.scope` | `personal` | `personal` names only you; `team` also matches any team you are in. |
 | `worktreeWatcher.reviewRequests.excludeDrafts` | `true` | Leave out drafts. |
 | `worktreeWatcher.reviewRequests.excludeReviewed` | `true` | Leave out ones you have already reviewed. |
+| `worktreeWatcher.reviewRequests.botWorkspace` | `~/Code/dependabot` | Scratch directory for bot pull requests. |
 
 Branch and repository names are validated against `^[A-Za-z0-9._\-/]+$` before
 going into the query — anything else is dropped rather than escaped, since a git
@@ -528,6 +529,37 @@ Branch names are used verbatim, so `dependabot/gradle/org.flywaydb-11.1.0` nests
 three directories deep. The convention places no meaning on depth, and flattening
 the separators would collide two branches differing only in where their slashes
 fall.
+
+### Two buttons on every row
+
+The list is built with `createQuickPick` rather than `showQuickPick`, because
+item buttons are only rendered by the former. The row itself cannot carry these
+actions — with `canSelectMany`, clicking a row toggles its checkbox — so they are
+icons on the right:
+
+| | | |
+|---|---|---|
+| `$(link-external)` | every row | Open the pull request on GitHub |
+| `$(comment-discussion)` | bot rows only | Open a Claude session in the bot workspace |
+
+The second works exactly like a worktree row's **Open Claude Session**: one
+session resolves straight away, several offer a list titled by their Claude
+titles, none starts a fresh one. The only difference is where the sessions come
+from. A worktree keeps them in a git sidecar; a plain directory has nowhere to
+put one, so they are read from Claude Code's own layout instead — every
+transcript for a directory already lives in that directory's project folder, so
+there is no second copy of the same fact to keep in step.
+
+`worktreeWatcher.reviewRequests.botWorkspace` (default `~/Code/dependabot`) is
+created if missing. It is deliberately a scratch directory rather than a
+checkout: a dependency bump is a thing to judge, and the repository it belongs to
+is reached with a worktree *from* there. That is also why the button is only on
+bot rows — a colleague's pull request belongs in its own repository's worktree,
+not a shared scratch folder.
+
+Starting a session uses the CLI in a terminal, not the `claude-vscode` command.
+That command resumes a session **by id**, and a session that does not exist yet
+has no id to resume — nothing hands one back either.
 
 ### What it will not do
 

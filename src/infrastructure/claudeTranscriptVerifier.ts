@@ -85,6 +85,44 @@ export class ClaudeTranscriptVerifier implements SessionVerifier {
     }
   }
 
+  /**
+   * Sessions that have run in a directory, newest first.
+   *
+   * The worktree flow reads these from a sidecar in `.git/worktrees/<name>/`,
+   * which a plain directory has nowhere to keep. Claude Code's own layout
+   * already answers the question — every transcript for a directory lives in
+   * that directory's project folder — so this reads it from there rather than
+   * inventing a second place to record the same fact.
+   *
+   * Ordered by last write, so the session you were most recently in comes first.
+   */
+  async sessionsIn(directory: string): Promise<ClaudeSession[]> {
+    const projectDirectory = this.transcriptDirectory(directory)
+    let entries: string[]
+    try {
+      entries = await fs.readdir(projectDirectory)
+    } catch {
+      return []
+    }
+
+    const found = await Promise.all(
+      entries
+        .filter((entry) => entry.endsWith('.jsonl'))
+        .map(async (entry): Promise<ClaudeSession | undefined> => {
+          try {
+            const { mtimeMs } = await fs.stat(path.join(projectDirectory, entry))
+            return { id: entry.slice(0, -'.jsonl'.length), at: new Date(mtimeMs).toISOString() }
+          } catch {
+            return undefined
+          }
+        })
+    )
+
+    return found
+      .filter((session): session is ClaudeSession => session !== undefined)
+      .sort((a, b) => (b.at ?? '').localeCompare(a.at ?? ''))
+  }
+
   /** Titles for several sessions at once, keyed by session id. */
   async titles(sessionIds: readonly string[]): Promise<Map<string, string>> {
     const resolved = await Promise.all(

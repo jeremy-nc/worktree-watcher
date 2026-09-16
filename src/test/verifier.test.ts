@@ -68,3 +68,58 @@ describe('ClaudeTranscriptVerifier', () => {
     assert.deepEqual(await verifier.resumable([]), [])
   })
 })
+
+describe('sessionsIn', () => {
+  let root: string
+  let verifier: ClaudeTranscriptVerifier
+  const workspace = '/Users/dev/Code/dependabot'
+
+  before(async () => {
+    root = await fs.mkdtemp(path.join(os.tmpdir(), 'sessions-in-'))
+    const project = path.join(root, projectSlug(workspace))
+    await fs.mkdir(project, { recursive: true })
+
+    // Written oldest first, then stamped, so ordering cannot come from readdir.
+    for (const [index, id] of [PHANTOM, LIVE].entries()) {
+      const file = path.join(project, `${id}.jsonl`)
+      await fs.writeFile(file, '{}\n')
+      const when = new Date(Date.UTC(2026, 8, 10 + index))
+      await fs.utimes(file, when, when)
+    }
+    // Not a transcript, and must not be mistaken for one.
+    await fs.writeFile(path.join(project, 'notes.md'), 'x')
+
+    verifier = new ClaudeTranscriptVerifier(root, new TranscriptIndex(root))
+  })
+
+  after(async () => {
+    await fs.rm(root, { recursive: true, force: true })
+  })
+
+  it('finds the sessions that ran in a plain directory', async () => {
+    const found = await verifier.sessionsIn(workspace)
+    assert.deepEqual(
+      found.map((session) => session.id),
+      [LIVE, PHANTOM]
+    )
+  })
+
+  it('orders by last write, so the session you were just in comes first', async () => {
+    const [newest] = await verifier.sessionsIn(workspace)
+    assert.equal(newest.id, LIVE)
+    assert.equal(newest.at, '2026-09-11T00:00:00.000Z')
+  })
+
+  it('ignores files that are not transcripts', async () => {
+    const found = await verifier.sessionsIn(workspace)
+    assert.equal(found.length, 2)
+    assert.equal(
+      found.some((session) => session.id.includes('notes')),
+      false
+    )
+  })
+
+  it('is empty for a directory nothing has run in', async () => {
+    assert.deepEqual(await verifier.sessionsIn('/Users/dev/Code/never-used'), [])
+  })
+})
