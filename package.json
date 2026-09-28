@@ -2,7 +2,7 @@
   "name": "worktree-watcher",
   "displayName": "Worktree Watcher",
   "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
-  "version": "0.33.0",
+  "version": "0.34.0",
   "publisher": "jeremyheritage",
   "license": "MIT",
   "engines": {
@@ -306,6 +306,12 @@
           "type": "boolean",
           "default": false,
           "description": "Show repositories whose .worktrees directory currently holds no worktrees."
+        },
+        "worktreeWatcher.sessionTitleLength": {
+          "type": "number",
+          "default": 28,
+          "minimum": 0,
+          "markdownDescription": "Characters of the Claude session title shown before the branch name on a worktree row, ending in `…` when cut. `0` hides the title."
         },
         "worktreeWatcher.github.enabled": {
           "type": "boolean",

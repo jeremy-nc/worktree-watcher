@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import * as vscode from 'vscode'
 
 import { DEFAULT_STALE_DAYS } from '../domain/cleanUp'
+import { DEFAULT_SESSION_TITLE_LENGTH } from '../domain/display'
 import {
   DEFAULT_REVIEW_SCOPE,
   DEFAULT_SESSION_PROMPT,
@@ -113,6 +114,10 @@ export class VscodeSettings implements Settings {
 
   get showEmptyRepositories(): boolean {
     return this.read<boolean>('showEmptyRepositories', false)
+  }
+
+  get sessionTitleLength(): number {
+    return Math.max(0, this.read<number>('sessionTitleLength', DEFAULT_SESSION_TITLE_LENGTH))
   }
 
   get staleDays(): number {

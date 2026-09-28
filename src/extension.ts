@@ -167,7 +167,14 @@ export function activate(context: vscode.ExtensionContext): void {
     logger
   )
 
-  const provider = new WorktreeTreeProvider(store, transcripts, pullRequests, activities, builds)
+  const provider = new WorktreeTreeProvider(
+    store,
+    transcripts,
+    pullRequests,
+    activities,
+    builds,
+    () => settings.sessionTitleLength
+  )
 
   // The poller follows the scan: whatever branches exist are what it asks about.
   store.onDidChange((state) => pullRequests.setBranches(branchRefs(state.repositories)))
@@ -176,7 +183,12 @@ export function activate(context: vscode.ExtensionContext): void {
   store.onDidChange((state) => activities.setSessions(sessionRefs(state.repositories)))
   store.onDidChange((state) => builds.setBranches(branchRefs(state.repositories)))
   builds.onDidChange(() => provider.refresh())
-  activities.onDidChange(() => provider.refresh())
+  activities.onDidChange(() => {
+    provider.refresh()
+    // Activity means the transcript moved, which is when a title appears or is
+    // renamed; re-reading on every PR poll instead would be wasted work.
+    void provider.refreshTitles()
+  })
   const tree = vscode.window.createTreeView<Node>(VIEW_ID, { treeDataProvider: provider })
 
   // Scan and watch only while the view is on screen.

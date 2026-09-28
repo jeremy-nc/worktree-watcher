@@ -40,6 +40,8 @@ export interface Settings {
   readonly rootPath: string
   readonly maxDepth: number
   readonly showEmptyRepositories: boolean
+  /** Characters of session title shown ahead of the branch; 0 hides it. */
+  readonly sessionTitleLength: number
   /** Idle days after which clean-up offers a worktree for removal. */
   readonly staleDays: number
   /** Whose review requests to list. */

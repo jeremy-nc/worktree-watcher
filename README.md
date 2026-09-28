@@ -13,6 +13,19 @@ repository and labelled by branch.
      dependabot/gradle/minor-and-patch-bea9c3e41d
 ```
 
+A worktree with a Claude session leads with that session's title, cut to
+`worktreeWatcher.sessionTitleLength` characters (default 28, `0` hides it):
+
+```
+Create always-visible VSCod…  test-worktree-watcher
+Pull and review dependabot…  dependabot/gradle/minor-and-patch-310c732cac
+```
+
+The title goes first because it says what the work *is*, which a branch like
+`minor-and-patch-310c732cac` does not; cutting it keeps the branch in view. It is
+the most recent session's title, re-read after each scan and whenever a session's
+activity changes — which is when Claude generates a title, or you rename one.
+
 The dimmed text on the right is the on-disk folder, shown **only when it disagrees with
 the branch** — the `ABC-123` row above is a worktree actually sitting on
 `feature/ABC-123-cleanup-…`. Matching folders stay quiet.
@@ -973,6 +986,7 @@ Lost the panel? <kbd>⌘⇧P</kbd> → `Focus on Worktrees View`.
 | `worktreeWatcher.rootPath` | `~/Code` | Directory to watch. Supports `~`, `${userHome}`, `${workspaceFolder}`. |
 | `worktreeWatcher.maxDepth` | `4` | Search depth inside each `.worktrees` directory. |
 | `worktreeWatcher.showEmptyRepositories` | `false` | Show repos whose `.worktrees` is empty. |
+| `worktreeWatcher.sessionTitleLength` | `28` | Session title characters before the branch; `0` hides it. |
 | `worktreeWatcher.cleanUp.staleDays` | `14` | Idle days before clean-up offers a worktree. |
 
 `rootPath` is `machine-overridable` so Settings Sync does not push a machine-specific

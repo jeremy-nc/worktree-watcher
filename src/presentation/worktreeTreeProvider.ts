@@ -8,6 +8,7 @@ import {
   repositoryDescription,
   tildify,
   worktreeDescription,
+  labelWithSession,
   worktreeLabel
 } from '../domain/display'
 import { Repository, Worktree } from '../domain/model'
@@ -44,18 +45,44 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
 
   private readonly home = os.homedir()
 
+  /**
+   * Title of each row's most recent session, by session id. Held here because
+   * a label is built synchronously and a title needs a transcript read.
+   */
+  private sessionTitles: ReadonlyMap<string, string> = new Map()
+
   constructor(
     private readonly store: WorktreeStore,
     private readonly titles: SessionTitleReader,
     private readonly pullRequests: PullRequestLookup,
     private readonly activities: ActivityLookup,
-    private readonly builds: BuildLookup
+    private readonly builds: BuildLookup,
+    private readonly sessionTitleLength: () => number
   ) {
     this.store.onDidChange((state: State) => {
       if (state.status !== 'scanning') {
         this.changed.fire(undefined)
+        void this.refreshTitles()
       }
     })
+  }
+
+  /**
+   * Re-reads the titles of the sessions the rows show, redrawing only if one
+   * changed. Called after a scan and whenever a session's activity moves — a
+   * title is generated, or renamed, while the session is being used.
+   */
+  async refreshTitles(): Promise<void> {
+    const ids = this.store.current.repositories
+      .flatMap((repository) => repository.worktrees)
+      .map((worktree) => worktree.claudeSessions[0]?.id)
+      .filter((id): id is string => id !== undefined)
+
+    const next = await this.titles.titles(ids)
+    if (!sameEntries(next, this.sessionTitles)) {
+      this.sessionTitles = next
+      this.changed.fire(undefined)
+    }
   }
 
   /** Redraw without rescanning — used when pull request status lands. */
@@ -194,8 +221,13 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
 
   private worktreeItem(node: Extract<Node, { kind: 'worktree' }>): vscode.TreeItem {
     const { worktree } = node
+    const latest = worktree.claudeSessions[0]
     const item = new vscode.TreeItem(
-      worktreeLabel(worktree),
+      labelWithSession(
+        worktreeLabel(worktree),
+        latest && this.sessionTitles.get(latest.id),
+        this.sessionTitleLength()
+      ),
       vscode.TreeItemCollapsibleState.None
     )
     item.id = worktree.absolutePath
@@ -241,4 +273,8 @@ function describeAge(ms: number): string {
   }
   const minutes = Math.round(seconds / 60)
   return minutes < 90 ? `${minutes}m ago` : `${Math.round(minutes / 60)}h ago`
+}
+
+function sameEntries(a: ReadonlyMap<string, string>, b: ReadonlyMap<string, string>): boolean {
+  return a.size === b.size && [...a].every(([key, value]) => b.get(key) === value)
 }

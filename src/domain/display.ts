@@ -15,6 +15,45 @@ export function worktreeLabel(worktree: Worktree): string {
   return worktree.folderPath
 }
 
+/** Characters of session title shown ahead of the branch; 0 hides it. */
+export const DEFAULT_SESSION_TITLE_LENGTH = 28
+
+/**
+ * `Create always-visible VSCod… feature/ABC-123` — the session's title leading,
+ * cut to `maxLength`, then the branch.
+ *
+ * The title goes first because it says what the work *is*, which a branch name
+ * like `dependabot/gradle/minor-and-patch-8e69e0ae7a` does not; truncating keeps
+ * the branch in view however long the title runs. Two spaces separate them,
+ * since an untruncated title has no ellipsis to mark where it ends.
+ */
+export function labelWithSession(
+  label: string,
+  title: string | undefined,
+  maxLength: number
+): string {
+  const shown = title ? truncate(title, maxLength) : ''
+  return shown ? `${shown}  ${label}` : label
+}
+
+/**
+ * Cuts to `maxLength` characters including a trailing `…`.
+ *
+ * Counts code points rather than UTF-16 units, so an emoji in a title is never
+ * split into a broken half. Runs of whitespace collapse first, so a title with
+ * a line break in it does not produce a gap.
+ */
+export function truncate(text: string, maxLength: number): string {
+  const characters = [...text.replace(/\s+/g, ' ').trim()]
+  if (maxLength <= 0) {
+    return ''
+  }
+  if (characters.length <= maxLength) {
+    return characters.join('')
+  }
+  return `${characters.slice(0, Math.max(0, maxLength - 1)).join('').trimEnd()}…`
+}
+
 /**
  * The dimmed right-hand text.
  *
