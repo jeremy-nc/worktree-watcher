@@ -9,6 +9,7 @@ import { WorktreeStatus } from '../domain/removal'
 import { Activity } from '../domain/activity'
 import { ReviewScope } from '../domain/reviewRequests'
 import { Build } from '../domain/build'
+import { CacheEntry } from '../domain/sharedCache'
 
 export interface Disposable {
   dispose(): void
@@ -141,6 +142,26 @@ export interface TeamCitySettings {
   readonly deployEnvironment: string
   readonly pollMinutes: number
   onDidChange(listener: () => void): Disposable
+}
+
+/**
+ * A cache visible to every VS Code window on this machine, with a per-key lock
+ * so two windows do not fetch the same thing at once.
+ *
+ * Implementations must fail open. A cache that cannot be read reports nothing
+ * cached, a lock that cannot be taken for a reason other than contention reports
+ * success, and a failed write is dropped. Every failure then degrades to the
+ * window fetching for itself — the behaviour before there was a cache — and
+ * never to serving something wrong.
+ */
+export interface SharedCache {
+  read<T>(key: string): Promise<CacheEntry<T> | undefined>
+  write<T>(key: string, value: T, fetchedAt: number): Promise<void>
+  /** True when this window now holds the lock. */
+  tryLock(key: string): Promise<boolean>
+  unlock(key: string): Promise<void>
+  /** True when some window holds a live lock on this key. */
+  isLocked(key: string): Promise<boolean>
 }
 
 export interface Logger {

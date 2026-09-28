@@ -42,6 +42,13 @@ import {
   summariseCheckouts
 } from './domain/reviewRequests'
 import { GhReviewRequestSource } from './infrastructure/ghReviewRequestSource'
+import { FileSharedCache } from './infrastructure/fileSharedCache'
+import { SharedFetch } from './application/sharedFetch'
+import {
+  sharedBuildSource,
+  sharedFetcher,
+  sharedPullRequestSource
+} from './application/sharedSources'
 import {
   BranchAlreadyCheckedOutError,
   GitWorktreeCreator
@@ -88,9 +95,23 @@ export function activate(context: vscode.ExtensionContext): void {
   // A cross-window request may have been aimed at this window before it existed.
   void launcher.consumePending()
 
+  // One cache across every window, so several windows showing the panel make
+  // one set of requests between them, fetched by whichever window is in use.
+  let windowFocused = vscode.window.state.focused
+  const sharedCache = new FileSharedCache(logger)
+  void sharedCache.prune()
+  const shared = new SharedFetch(sharedCache, logger, { isFocused: () => windowFocused })
+
   const gitHubSettings = new VscodeGitHubSettings()
+  const gitHubInterval = (): number => gitHubSettings.pollMinutes * 60_000
+  const organisation = gitHubSettings.organisation
   const pullRequests = new PullRequestStore(
-    new GhPullRequestSource(gitHubSettings.organisation),
+    sharedPullRequestSource(
+      new GhPullRequestSource(organisation),
+      shared,
+      organisation,
+      gitHubInterval
+    ),
     gitHubSettings,
     logger
   )
@@ -98,13 +119,14 @@ export function activate(context: vscode.ExtensionContext): void {
   // One search per cycle, independent of worktree count. Feeds the header text,
   // and the checkout list reads straight off it rather than searching again.
   const reviewRequests = new ReviewRequestStore(
-    {
-      fetch: () =>
-        new GhReviewRequestSource(
-          gitHubSettings.organisation,
-          reviewQueryOptions(settings)
-        ).fetch()
-    },
+    sharedFetcher(
+      () =>
+        new GhReviewRequestSource(gitHubSettings.organisation, reviewQueryOptions(settings)).fetch(),
+      shared,
+      () =>
+        `github:reviews:${gitHubSettings.organisation}:${JSON.stringify(reviewQueryOptions(settings))}`,
+      gitHubInterval
+    ),
     gitHubSettings,
     logger
   )
@@ -134,7 +156,16 @@ export function activate(context: vscode.ExtensionContext): void {
       },
       async () => context.secrets.get(TEAMCITY_TOKEN_KEY)
   )
-  const builds = new BuildStore(buildSource, teamCitySettings, logger)
+  const builds = new BuildStore(
+    sharedBuildSource(
+      buildSource,
+      shared,
+      () => teamCitySettings.url,
+      () => teamCitySettings.pollMinutes * 60_000
+    ),
+    teamCitySettings,
+    logger
+  )
 
   const provider = new WorktreeTreeProvider(store, transcripts, pullRequests, activities, builds)
 
@@ -169,6 +200,29 @@ export function activate(context: vscode.ExtensionContext): void {
   store.onDidChange((state) => {
     tree.message = state.status === 'error' ? `Scan failed: ${state.error}` : undefined
   })
+
+  // Asking again costs nothing when the cache is fresh, so every trigger below
+  // simply re-polls and lets the shared rules decide whether that means the
+  // network.
+  const refreshRemote = (): void => {
+    pullRequests.refresh()
+    builds.refresh()
+    reviewRequests.refresh()
+  }
+  context.subscriptions.push(
+    // Gaining focus makes this the window allowed to fetch, so anything that
+    // went stale while it sat in the background is refreshed straight away.
+    vscode.window.onDidChangeWindowState((state) => {
+      const gained = state.focused && !windowFocused
+      windowFocused = state.focused
+      if (gained) {
+        refreshRemote()
+      }
+    }),
+    // Another window published something: repaint from it now, rather than on
+    // this window's next tick.
+    sharedCache.onPeerWrite(refreshRemote)
+  )
 
   context.subscriptions.push(
     tree,

@@ -472,7 +472,7 @@ has since merged.
 > panel closed the status bar shows the last count seen rather than the current
 > one. Clicking still re-reads, so acting on a stale number never acts on stale
 > data. Polling while the window is open, regardless of the panel, would fix the
-> display.
+> display — and with the shared cache it would cost nothing extra.
 
 **A codicon marks who opened it** — `$(robot)` against `$(account)`, taken from
 GitHub typing the author as `Bot` rather than `User`. A bot login is otherwise
@@ -617,6 +617,59 @@ has no id to resume — nothing hands one back either.
 A pull request whose repository is not cloned still appears, held back by its
 warning — "why is that one missing" is a worse question to leave the reader with
 than one unticked row.
+
+## Several windows, one set of requests
+
+With several VS Code windows open, each one showing the panel would otherwise
+poll GitHub and TeamCity for the same `~/Code` tree — three windows, three times
+the traffic, for identical answers. Instead every window shares one cache in
+`~/.local/state/worktree-watcher/cache/`, and the rules for using it are:
+
+| Situation | What the window does |
+|---|---|
+| Data younger than the poll interval | Uses it — whichever window fetched it |
+| Stale, and **this window is focused** | Fetches, and publishes for the others |
+| Stale, window in the background | Keeps showing it, up to 6× the interval |
+| Past that ceiling, in the background | Catches up by fetching |
+| Nothing cached at all | Fetches, focused or not, so a new window is never empty |
+| Another window is already fetching it | Waits for that result instead of repeating the request |
+
+So the network is spent by the window you are using, and the others repaint the
+moment it publishes: each window watches the cache directory, and ignores its
+own writes. Gaining focus refreshes immediately, so a window you switch to never
+shows data older than one interval.
+
+**Measured:** three windows asking four times between them made one GitHub call,
+the background windows answering in 1ms. Three windows cold-starting at the same
+instant — what a VS Code restart does — also made one.
+
+### Why it cannot show wrong data
+
+- **Every failure degrades to the old behaviour.** An unreadable cache reads as
+  empty, a lock that cannot be taken for any reason but contention counts as
+  taken, a failed write is dropped. Each ends with the window fetching for
+  itself — never with it serving something it should not.
+- **Failures are never cached**, so each window's backoff and error reporting
+  work exactly as before. And since only the focused window retries stale data,
+  a GitHub outage is not retried by every window in parallel.
+- **Writes are atomic** — temporary file, then `rename` — so no reader sees half
+  a file. Stored entries carry their full key and are ignored if it does not
+  match.
+- **Keys name everything the answer depends on**: the organisation, the branch
+  set, the filters, the TeamCity URL. Windows share an entry only when they asked
+  the same question; a window watching a different root gets its own.
+- **A window that died holding a lock** does not block the rest: locks expire
+  after 60s, and a waiter gives up after 35s — longer than any request timeout,
+  so a slow peer is waited for and a dead one is not.
+
+Clicking **Check Out Review Requests…** always goes through these rules rather
+than trusting what the window last saw. A background window may be showing an
+older result from the cache; judging its age by when the *window* last polled
+would pass it off as new.
+
+The one deliberate trade: a window on another monitor that you are not using can
+show data up to six intervals old — half an hour at the default five minutes.
+Focus it and it is current.
 
 ## Removing a worktree
 

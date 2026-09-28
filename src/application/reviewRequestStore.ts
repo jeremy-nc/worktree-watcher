@@ -37,7 +37,7 @@ export class ReviewRequestStore implements Disposable {
   private state: ReviewRequestState = { status: 'idle', pullRequests: [] }
   private timer?: ReturnType<typeof setTimeout>
   private consumers = 0
-  private inFlight = false
+  private inFlight?: Promise<void>
   private failures = 0
   private settingsListener?: Disposable
 
@@ -77,26 +77,22 @@ export class ReviewRequestStore implements Disposable {
   }
 
   /**
-   * The current list, fetching only if there is not already one.
+   * The current list, as fresh as the shared rules allow.
    *
-   * The polling that keeps the status bar honest has already paid for this
-   * query, so opening the list should be instant. Waiting on a second identical
-   * search — several seconds against GitHub — while holding the answer in memory
-   * is the kind of thing that makes a button feel broken.
+   * Always asks the source rather than trusting what this store last saw. The
+   * store only knows when *it* polled, not when the data was fetched — in a
+   * background window those differ, because it may be serving another window's
+   * result — so judging freshness here would pass off old data as new. The
+   * source is wrapped in the cross-window cache, which knows the real age and
+   * answers from memory when that is fine, so this stays instant in the common
+   * case.
    *
-   * Falls through to a live fetch when nothing has been polled yet, when the
-   * last poll failed, or when what was polled has gone stale.
-   *
-   * Staleness matters because polling stops when the panel is hidden. A result
-   * from an hour ago could offer a worktree for a pull request that has since
-   * merged, so anything older than one poll interval is re-read rather than
-   * trusted — the case this is optimising for is a click moments after a poll,
-   * not a click hours later.
+   * A poll already under way is joined rather than skipped. Clicking into a
+   * window focuses it, focusing starts a refresh, and the click lands while that
+   * is in flight; returning the previous list there would be the stale answer
+   * this exists to avoid.
    */
   async ensure(): Promise<readonly ReviewRequest[]> {
-    if (this.state.status === 'ready' && this.fresh()) {
-      return this.state.pullRequests
-    }
     // `force`, because polling stops when the panel is hidden and an explicit
     // click must still answer.
     await this.poll(true)
@@ -111,24 +107,26 @@ export class ReviewRequestStore implements Disposable {
     this.changed.dispose()
   }
 
-  /** True when the last successful poll is still within one poll interval. */
-  private fresh(): boolean {
-    if (this.state.fetchedAt === undefined) {
-      return false
+  private poll(force = false): Promise<void> {
+    if (this.inFlight) {
+      return this.inFlight
     }
-    return this.now() - this.state.fetchedAt < Math.max(1, this.settings.pollMinutes) * 60_000
+    if (this.consumers === 0 && !force) {
+      return Promise.resolve()
+    }
+    this.inFlight = this.pollOnce().finally(() => {
+      this.inFlight = undefined
+      this.schedule()
+    })
+    return this.inFlight
   }
 
-  private async poll(force = false): Promise<void> {
-    if ((this.consumers === 0 && !force) || this.inFlight) {
-      return
-    }
+  private async pollOnce(): Promise<void> {
     if (!this.settings.enabled || !this.settings.organisation) {
       this.publish({ status: 'disabled', pullRequests: [] })
       return
     }
 
-    this.inFlight = true
     try {
       const pullRequests = await this.source.fetch()
       this.failures = 0
@@ -143,9 +141,6 @@ export class ReviewRequestStore implements Disposable {
         error: error instanceof Error ? error.message : String(error)
       })
       this.logger.info(`review requests failed: ${this.state.error}`)
-    } finally {
-      this.inFlight = false
-      this.schedule()
     }
   }
 

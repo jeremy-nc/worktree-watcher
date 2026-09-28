@@ -362,7 +362,7 @@ describe('ReviewRequestStore', () => {
     store.dispose()
   })
 
-  it('serves the list from the poll instead of searching again', async () => {
+  it('asks the source on every ensure, leaving freshness to the shared cache', async () => {
     let calls = 0
     const store = new ReviewRequestStore(
       {
@@ -374,48 +374,38 @@ describe('ReviewRequestStore', () => {
       settings,
       logger
     )
-    const handle = store.activate()
-    await new Promise((resolve) => setImmediate(resolve))
-    assert.equal(calls, 1)
-
-    const first = await store.ensure()
-    const second = await store.ensure()
-    assert.equal(calls, 1, 'opening the list must not repeat the search')
-    assert.equal(first.length, 1)
-    assert.equal(second.length, 1)
-    handle.dispose()
+    await store.ensure()
+    await store.ensure()
+    assert.equal(calls, 2)
     store.dispose()
   })
 
-  it('re-reads rather than trusting a result older than a poll interval', async () => {
+  it('joins a poll already in flight rather than returning the previous list', async () => {
+    let release: (list: ReviewRequest[]) => void = () => undefined
     let calls = 0
-    let clock = 1_000
     const store = new ReviewRequestStore(
       {
-        fetch: async () => {
+        fetch: () => {
           calls += 1
-          return [pr()]
+          return calls === 1
+            ? Promise.resolve([pr({ number: 1 })])
+            : new Promise<ReviewRequest[]>((resolve) => (release = resolve))
         }
       },
       settings,
-      logger,
-      () => clock
+      logger
     )
-    const handle = store.activate()
-    await new Promise((resolve) => setImmediate(resolve))
-    assert.equal(calls, 1)
-
-    // Still inside the 5-minute poll window: the click reads from memory.
-    clock += 60_000
     await store.ensure()
-    assert.equal(calls, 1, 'a fresh result should be served without a search')
 
-    // Past it — the panel could have been closed for an hour, and a pull request
-    // that has since merged must not be offered as a worktree.
-    clock += 10 * 60_000
-    await store.ensure()
-    assert.equal(calls, 2, 'a stale result must not be served to a click')
-    handle.dispose()
+    // A refresh is under way — as when focusing the window starts one — and the
+    // click arrives before it finishes.
+    store.refresh()
+    const clicked = store.ensure()
+    release([pr({ number: 2 })])
+
+    const list = await clicked
+    assert.equal(calls, 2, 'the click must join the refresh, not start another')
+    assert.equal(list[0].number, 2, 'and must see its result, not the list before it')
     store.dispose()
   })
 
