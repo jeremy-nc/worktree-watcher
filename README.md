@@ -840,20 +840,20 @@ only direct children:
 On a real `~/Code` that is ~64 watch paths for 24 worktrees, and a full rescan takes
 ~30ms. Events are debounced 400ms, since git operations arrive in bursts.
 
-## The `/worktree` Claude skill
+## The `/worktree-watcher` Claude skill
 
-`skill/` holds a Claude Code skill that creates worktrees under this same convention
+`skills/worktree-watcher/` holds a Claude Code skill that creates worktrees under this same convention
 and records the session that asked for it:
 
 ```
-/worktree widget-service ARC-123-add-thing
+/worktree-watcher widget-service ARC-123-add-thing
 ```
 
 It fetches origin, branches from `origin/main`, and records the session in two places:
 
 | Where | Purpose |
 |---|---|
-| `.git/worktrees/<name>/claude-sessions` | Live link, read by this extension. |
+| `.git/worktrees/<name>/worktree-watcher/claude-sessions` | Live link, read by this extension. The `worktree-watcher/` folder is where everything this extension and its skills keep per worktree goes; git removes it with the worktree. Older worktrees have the file one level up until the hook next runs there, and the scanner reads either. |
 | `~/.local/state/worktree-watcher/worktrees.jsonl` | Append-only history. |
 
 The sidecar lives in git's **admin directory**, which is not tracked content — it
@@ -874,7 +874,7 @@ A comma-separated list would need read-modify-write, which loses an entry when t
 sessions start concurrently; a short `>>` append does not. The legacy single-id file
 parses identically under the same line reader, so there is no migration.
 
-`skill/hooks/session-start.sh` is a `SessionStart` hook that appends the current
+`skills/worktree-watcher/hooks/session-start.sh` is a `SessionStart` hook that appends the current
 session whenever a session starts **anywhere inside** a worktree — without it only
 the creating session is ever recorded. It reads `session_id` from the hook payload
 rather than the environment, exits early (~9ms) when the cwd is not in a worktree,
@@ -971,7 +971,7 @@ project directory, or an unreadable one all mean "show everything" rather than
 ### Installing the skill and hook
 
 ```bash
-ln -sfn ~/Code/vs-code-extensions/panels/worktree-watcher/skill ~/.claude/skills/worktree
+ln -sfn ~/Code/vs-code-extensions/panels/worktree-watcher/skills/worktree-watcher ~/.claude/skills/worktree-watcher
 ```
 
 Then add to `~/.claude/settings.json` — a pointer only, so the implementation stays
@@ -980,7 +980,7 @@ version-controlled here:
 ```json
 "SessionStart": [
   { "hooks": [{ "type": "command", "async": true, "timeout": 10,
-                "command": "~/.claude/skills/worktree/hooks/session-start.sh" }] }
+                "command": "~/.claude/skills/worktree-watcher/hooks/session-start.sh" }] }
 ]
 ```
 

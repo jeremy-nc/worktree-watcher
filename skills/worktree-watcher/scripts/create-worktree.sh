@@ -4,7 +4,7 @@
 # session that asked for it.
 #
 #   <root>/<repo>.worktrees/<branch>          the worktree
-#   .git/worktrees/<name>/claude-sessions     append-only "<id> <iso>" lines
+#   .git/worktrees/<name>/worktree-watcher/claude-sessions   append-only "<id> <iso>" lines
 #                                             (never committed — .git is not
 #                                             tracked content, and
 #                                             `git worktree remove` deletes it)
@@ -67,7 +67,8 @@ if [ -n "$SESSION_ID" ]; then
   NOW="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   # Append-only: later sessions working here add their own line, via the
   # SessionStart hook. Never rewrite the file — concurrent sessions would race.
-  printf '%s %s\n' "$SESSION_ID" "$NOW" >> "$ADMIN_DIR/claude-sessions"
+  mkdir -p "$ADMIN_DIR/worktree-watcher"
+  printf '%s %s\n' "$SESSION_ID" "$NOW" >> "$ADMIN_DIR/worktree-watcher/claude-sessions"
 
   mkdir -p "$STATE_DIR"
   printf '{"sessionId":"%s","repo":"%s","branch":"%s","path":"%s","base":"%s","event":"create","createdAt":"%s"}\n' \

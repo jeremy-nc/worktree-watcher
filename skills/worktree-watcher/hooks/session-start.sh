@@ -13,7 +13,7 @@
 #
 # Wire up in ~/.claude/settings.json:
 #   "SessionStart": [{ "hooks": [{ "type": "command", "async": true,
-#     "command": "~/.claude/skills/worktree/hooks/session-start.sh" }] }]
+#     "command": "~/.claude/skills/worktree-watcher/hooks/session-start.sh" }] }]
 #
 # Never fails the session: every path exits 0.
 #
@@ -54,7 +54,15 @@ done
 ADMIN_DIR="$(git -C "$dir" rev-parse --absolute-git-dir 2>/dev/null || true)"
 [ -n "$ADMIN_DIR" ] && [ -d "$ADMIN_DIR" ] || exit 0
 
-SIDECAR="$ADMIN_DIR/claude-sessions"
+META_DIR="$ADMIN_DIR/worktree-watcher"
+SIDECAR="$META_DIR/claude-sessions"
+LEGACY_SIDECAR="$ADMIN_DIR/claude-sessions"
+mkdir -p "$META_DIR" 2>/dev/null || exit 0
+# Worktrees from before the folder existed keep their file one level up. Move it
+# in once; the file is append-only, so nothing else can be writing it mid-move.
+if [ -f "$LEGACY_SIDECAR" ] && [ ! -f "$SIDECAR" ]; then
+  mv "$LEGACY_SIDECAR" "$SIDECAR" 2>/dev/null || true
+fi
 
 # Already recorded: resuming a session re-fires SessionStart.
 if [ -f "$SIDECAR" ] && grep -q "^$SESSION_ID" "$SIDECAR" 2>/dev/null; then

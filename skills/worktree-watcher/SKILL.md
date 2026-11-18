@@ -3,7 +3,7 @@ name: worktree
 description: Create a git worktree for a NurtureCloud repository following the ~/Code naming convention, branched from the remote default branch, and record the Claude session that requested it so the conversation can be resumed from that worktree later. Use when the user asks to create a worktree, start work on a ticket in a separate checkout, or set up a workspace for a repository they are not currently inside — including when the current directory is not a git repository at all.
 ---
 
-# Worktree
+# Worktree Watcher
 
 Creates a worktree under the `~/Code` convention and links it back to this Claude
 session, so the panel (and `claude --resume`) can reopen the conversation that
@@ -52,7 +52,7 @@ If the user gave an explicit branch name, use it verbatim.
 ### 3. Create it
 
 ```bash
-~/.claude/skills/worktree/scripts/create-worktree.sh <repo> <branch> [base-ref]
+~/.claude/skills/worktree-watcher/scripts/create-worktree.sh <repo> <branch> [base-ref]
 ```
 
 The script fetches `origin`, resolves the base to `origin/main` (falling back to
@@ -81,11 +81,14 @@ code ~/Code/<repo>.worktrees/<branch>          # new window
 
 | Where | Purpose |
 |---|---|
-| `.git/worktrees/<name>/claude-sessions` | Live link, one `<id> <iso-8601>` line per session. Read by the Worktree Watcher panel to offer "Resume Claude Session". Deleted automatically by `git worktree remove`. |
+| `.git/worktrees/<name>/worktree-watcher/claude-sessions` | Live link, one `<id> <iso-8601>` line per session. Read by the Worktree Watcher panel to offer "Resume Claude Session". Deleted automatically by `git worktree remove`. |
 | `~/.local/state/worktree-watcher/worktrees.jsonl` | Append-only history, including worktrees since removed. |
 
 The sidecar lives in git's admin directory, which is **not tracked content** —
-it cannot be committed or pushed, and needs no gitignore entry.
+it cannot be committed or pushed, and needs no gitignore entry. The
+`worktree-watcher/` folder inside it holds everything this extension and its
+skills keep per worktree. Worktrees from before the folder existed have the file
+one level up; the hook moves it in the next time a session starts there.
 
 **More than one session per worktree is normal**, so the file is append-only: a
 comma-separated list would need read-modify-write and would lose entries when two
@@ -100,7 +103,7 @@ payload rather than the environment. Wire it up once in
 ```json
 "SessionStart": [
   { "hooks": [{ "type": "command", "async": true, "timeout": 10,
-                "command": "~/.claude/skills/worktree/hooks/session-start.sh" }] }
+                "command": "~/.claude/skills/worktree-watcher/hooks/session-start.sh" }] }
 ]
 ```
 

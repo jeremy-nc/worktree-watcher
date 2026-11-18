@@ -8,4 +8,4 @@ package-lock.json
 **/.DS_Store
 out/test/**
 src/test/**
-skill/**
+skills/**

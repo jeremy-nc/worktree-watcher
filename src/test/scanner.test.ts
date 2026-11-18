@@ -45,11 +45,17 @@ describe('FsWorktreeScanner', () => {
       '9f2a1c4e8b7d6a5f4e3c2b1a0987654321fedcba\n'
     )
 
-    // Two Claude sessions have worked here — append-only sidecar.
+    // Two Claude sessions have worked here — append-only sidecar, in the
+    // worktree-watcher folder the hook now writes to.
     await write(
-      `${root}/widget-service/.git/worktrees/dependabot-config-compliance/claude-sessions`,
+      `${root}/widget-service/.git/worktrees/dependabot-config-compliance/worktree-watcher/claude-sessions`,
       'a88704ad-2961-4b2a-9220-26ee816b5e95 2026-09-12T07:07:45Z\n' +
         '3f19c204-8d51-4e2a-91bb-77c0e4a1b9de 2026-09-13T22:14:02Z\n'
+    )
+    // A flat file left one level up by an older hook must lose to the folder.
+    await write(
+      `${root}/widget-service/.git/worktrees/dependabot-config-compliance/claude-sessions`,
+      'c0ffee00-aaaa-bbbb-cccc-ddddeeeeffff 2026-09-01T00:00:00Z\n'
     )
     // Legacy single-id filename must still be read.
     await write(
@@ -118,6 +124,14 @@ describe('FsWorktreeScanner', () => {
     assert.deepEqual(
       worktree.claudeSessions.map((session) => session.id),
       ['3f19c204-8d51-4e2a-91bb-77c0e4a1b9de']
+    )
+  })
+
+  it('prefers the worktree-watcher folder over a flat sidecar left one level up', () => {
+    const worktree = find(scan, 'widget-service', 'chore/dependabot-config-compliance')
+    assert.equal(
+      worktree.claudeSessions.some((session) => session.id.startsWith('c0ffee00')),
+      false
     )
   })
 

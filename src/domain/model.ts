@@ -39,7 +39,11 @@ export interface ClaudeSession {
 }
 
 /**
- * Sidecar filenames inside `.git/worktrees/<name>/`, newest format first.
+ * Sidecar paths inside `.git/worktrees/<name>/`, newest format first.
+ *
+ * The current one sits in the `worktree-watcher/` folder that holds everything
+ * this extension and its skills keep per worktree; the skill's hook moves an
+ * older flat file in the next time a session starts, so both are read meanwhile.
  *
  * The file is append-only, one `<session-id> <iso-8601>` record per line: a
  * comma-separated list would require read-modify-write, which loses entries when
@@ -48,7 +52,11 @@ export interface ClaudeSession {
  * The legacy single-id file parses identically under the same line-based reader,
  * so no migration is needed.
  */
-export const SESSION_SIDECARS = ['claude-sessions', 'claude-session'] as const
+export const SESSION_SIDECARS = [
+  'worktree-watcher/claude-sessions',
+  'claude-sessions',
+  'claude-session'
+] as const
 
 const SESSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
