@@ -182,6 +182,38 @@ otherwise wake only when you clicked the Worktrees tab.
 The shared cache keeps this to one request per interval across windows, as
 before.
 
+### Watching from the session: `/worktree-watcher-watch-review`
+
+The Address button needs you to notice the badge. The second skill in
+`skills/` removes that step for a session that is already running: after
+raising a draft pull request from a worktree, run
+
+```
+/worktree-watcher-watch-review
+```
+
+in that session. It starts `scripts/watch-review.sh` as a **background task**
+and goes idle. The script reads the worktree's `pull-request.json` every five
+seconds and exits the moment it records bot threads; that exit is what wakes
+the session, which then runs `draft-to-ready` and stops at its confirmation
+gate for you. No tokens are spent while it waits, and the script never touches
+GitHub: Worktree Watcher decides what a bot is, so the badge and the wake-up
+always agree.
+
+| The file says | The script prints | The session then |
+|---|---|---|
+| `botThreads > 0` | `bot-threads N` | runs `/nc-create-pull-request:draft-to-ready <n>` |
+| `state` is `open` | `ready` | says the pull request is already with its reviewers |
+| `merged` or `closed` | that word | says so, stops |
+| missing, or `botThreads` is 0 | nothing yet | stays idle |
+| nothing for a day | `timeout` | offers to watch again |
+
+It is one-shot by design: once `draft-to-ready` is running, its own loop
+handles every later round of bot reviews. And because the file only moves when
+the panel polls, a session wakes within one interval while VS Code is in use,
+and not at all while it is in the background; the badge is the fallback for a
+session that was closed.
+
 ### Why the review needs two sources
 
 `reviewDecision` is the obvious field, and on its own it is wrong for half our
@@ -1069,6 +1101,7 @@ project directory, or an unreadable one all mean "show everything" rather than
 
 ```bash
 ln -sfn ~/Code/vs-code-extensions/panels/worktree-watcher/skills/worktree-watcher ~/.claude/skills/worktree-watcher
+ln -sfn ~/Code/vs-code-extensions/panels/worktree-watcher/skills/worktree-watcher-watch-review ~/.claude/skills/worktree-watcher-watch-review
 ```
 
 Then add to `~/.claude/settings.json` — a pointer only, so the implementation stays
