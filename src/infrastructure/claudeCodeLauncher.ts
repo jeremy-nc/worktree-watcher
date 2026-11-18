@@ -14,6 +14,9 @@ import { PendingSessionStore } from './pendingSessionStore'
  */
 const OPEN_SESSION_COMMAND = 'claude-vscode.primaryEditor.open'
 
+/** Claude Code's own command that puts the cursor in the conversation's input box. */
+const FOCUS_INPUT_COMMAND = 'claude-vscode.focus'
+
 /** How long to wait for the Claude Code extension to finish activating. */
 const CLAUDE_READY_TIMEOUT_MS = 30_000
 const CLAUDE_POLL_INTERVAL_MS = 400
@@ -150,6 +153,20 @@ export class ClaudeCodeLauncher {
       return
     }
     await vscode.commands.executeCommand(OPEN_SESSION_COMMAND, undefined, prompt)
+    await this.focusInput()
+  }
+
+  /**
+   * The open command only types a seeded prompt in; nothing can send it on your
+   * behalf. Putting the cursor in the box leaves Enter as the one key needed.
+   * Best effort: a focus that fails changes nothing about the session.
+   */
+  private async focusInput(): Promise<void> {
+    try {
+      await vscode.commands.executeCommand(FOCUS_INPUT_COMMAND)
+    } catch (error) {
+      this.logger.info(`could not focus the Claude input: ${String(error)}`)
+    }
   }
 
   /** Opens (or focuses) a session whose worktree is open in this window. */
@@ -180,6 +197,7 @@ export class ClaudeCodeLauncher {
 
     this.logger.info(`no existing tab found (${describeTabs()}); opening a new one`)
     await vscode.commands.executeCommand(OPEN_SESSION_COMMAND, sessionId)
+    await this.focusInput()
   }
 
   private async waitForClaudeCode(): Promise<boolean> {

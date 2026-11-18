@@ -581,7 +581,12 @@ The second has three cases, decided per pull request before the list is shown:
 **Never a terminal.** Both paths go through Claude Code's own
 `claude-vscode.primaryEditor.open`, which takes `(sessionId, initialPrompt)`:
 with an id it resumes, with no id and a prompt it starts a new conversation
-already seeded. That second argument had been sitting unused.
+already seeded. That second argument had been sitting unused. The open is
+followed by `claude-vscode.focus`, so the cursor is in the input and Enter is
+the only key needed. Nothing can press it for you: the panel has no supported
+way to send a prompt on another extension's behalf, and the alternatives tried
+(a hidden terminal, `claude --bg`, `claude -p`) all ended with two processes
+writing one transcript.
 
 **Which session belongs to which pull request** is answered by the seed prompt.
 A new conversation opens with the pull request's URL in its first message, and
