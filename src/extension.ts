@@ -8,7 +8,9 @@ import { PullRequestStore } from './application/pullRequestStore'
 import { ReviewRequestStore } from './application/reviewRequestStore'
 import { WorktreeStore } from './application/worktreeStore'
 import { ClaudeSession, Repository, WORKTREES_SUFFIX } from './domain/model'
-import { BranchRef, PullRequest } from './domain/pullRequest'
+import { addressBotCommentsPrompt, BranchRef, PullRequest } from './domain/pullRequest'
+import { PullRequestSidecars } from './application/pullRequestSidecars'
+import { FsPullRequestSidecarWriter } from './infrastructure/fsPullRequestSidecarWriter'
 import { GhPullRequestSource } from './infrastructure/ghPullRequestSource'
 import { BuildStore } from './application/buildStore'
 import { GoogleIapAuthProvider, IAP_AUTH_PROVIDER_ID } from './infrastructure/iapAuthProvider'
@@ -120,6 +122,16 @@ export function activate(context: vscode.ExtensionContext): void {
     logger
   )
 
+  // Each poll is mirrored into the worktrees it describes, so a session working
+  // in one can read its pull request from a file instead of asking GitHub.
+  const sidecars = new PullRequestSidecars(
+    new FsPullRequestSidecarWriter(),
+    () => settings.extraBotLogins,
+    logger
+  )
+  store.onDidChange((state) => sidecars.setWorktrees(state.repositories))
+  pullRequests.onDidChange((state) => void sidecars.record(state))
+
   // One search per cycle, independent of worktree count. Feeds the header text,
   // and the checkout list reads straight off it rather than searching again.
   const reviewRequests = new ReviewRequestStore(
@@ -180,7 +192,8 @@ export function activate(context: vscode.ExtensionContext): void {
     activities,
     builds,
     () => settings.sessionTitleLength,
-    () => filter
+    () => filter,
+    () => settings.extraBotLogins
   )
 
   // The poller follows the scan: whatever branches exist are what it asks about.
@@ -212,18 +225,34 @@ export function activate(context: vscode.ExtensionContext): void {
   tree.onDidChangeVisibility(() => {
     active?.dispose()
     active = tree.visible ? activateAll() : undefined
+    syncPullRequestPolling()
   })
 
   function activateAll(): vscode.Disposable {
     const running = [
       store.activate(),
-      pullRequests.activate(),
       activities.activate(),
       builds.activate(),
       reviewRequests.activate()
     ]
     return new vscode.Disposable(() => running.forEach((item) => item.dispose()))
   }
+
+  // Pull requests keep polling while this window is in use, panel or not: a
+  // session waiting on its worktree's pull-request.json wakes only when a poll
+  // writes it. The shared cache keeps that to one request per interval across
+  // windows, and nothing polls while VS Code is in the background.
+  let pullRequestPolling: vscode.Disposable | undefined
+  function syncPullRequestPolling(): void {
+    const wanted = tree.visible || windowFocused
+    if (wanted && !pullRequestPolling) {
+      pullRequestPolling = pullRequests.activate()
+    } else if (!wanted && pullRequestPolling) {
+      pullRequestPolling.dispose()
+      pullRequestPolling = undefined
+    }
+  }
+  syncPullRequestPolling()
 
   store.onDidChange((state) => {
     tree.message = state.status === 'error' ? `Scan failed: ${state.error}` : undefined
@@ -243,6 +272,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.onDidChangeWindowState((state) => {
       const gained = state.focused && !windowFocused
       windowFocused = state.focused
+      syncPullRequestPolling()
       if (gained) {
         refreshRemote()
       }
@@ -259,6 +289,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // Same command as the title-bar button, so either route opens the list.
     new ReviewRequestStatusBar(reviewRequests, 'worktreeWatcher.checkOutReviewRequests'),
     new vscode.Disposable(() => active?.dispose()),
+    new vscode.Disposable(() => pullRequestPolling?.dispose()),
     pullRequests,
     activities,
     builds,
@@ -356,6 +387,26 @@ export function activate(context: vscode.ExtensionContext): void {
       const session = await chooseSession(node, 'Open which Claude session?', transcripts)
       if (session && node?.kind === 'worktree') {
         await launcher.open(session.id, node.worktree.absolutePath)
+      }
+    }),
+    vscode.commands.registerCommand('worktreeWatcher.addressBotComments', async (node?: Node) => {
+      if (node?.kind !== 'worktree') {
+        return
+      }
+      const pullRequest = provider.pullRequestFor(node.repository, node.worktree)
+      if (!pullRequest) {
+        return
+      }
+      // The session that wrote the code gets the prompt typed in; a worktree
+      // with no session gets a new one seeded the same way. Enter is yours.
+      const prompt = addressBotCommentsPrompt(pullRequest, settings.addressPrompt)
+      if (node.worktree.claudeSessions.length === 0) {
+        await launcher.start(prompt, node.worktree.absolutePath)
+        return
+      }
+      const session = await chooseSession(node, 'Address them in which Claude session?', transcripts)
+      if (session) {
+        await launcher.open(session.id, node.worktree.absolutePath, prompt)
       }
     }),
     vscode.commands.registerCommand('worktreeWatcher.removeWorktree', async (node?: Node) => {

@@ -5,12 +5,27 @@
  * read from git, and the PR's head ref is what GitHub calls the same thing.
  */
 
+import { fillTemplate } from './reviewRequests'
+
 export type PullRequestState = 'open' | 'draft' | 'merged' | 'closed'
 export type CheckState = 'success' | 'failure' | 'pending' | 'error'
 export type ReviewDecision = 'approved' | 'changes-requested' | 'review-required'
 
 /** One reviewer's most recent verdict on a pull request. */
 export type ReviewState = 'approved' | 'changes-requested' | 'commented' | 'dismissed' | 'pending'
+
+/** Who opened a review thread, as GitHub types the account. */
+export interface ReviewThreadAuthor {
+  readonly login: string
+  /** True when GitHub typed the account as a Bot rather than a User. */
+  readonly isBot: boolean
+}
+
+export interface ReviewThread {
+  readonly resolved: boolean
+  /** Undefined when the opening comment's author is gone (a deleted account). */
+  readonly author?: ReviewThreadAuthor
+}
 
 export interface PullRequest {
   readonly repository: string
@@ -22,6 +37,100 @@ export interface PullRequest {
   readonly checks?: CheckState
   readonly review?: ReviewDecision
   readonly updatedAt?: string
+  /**
+   * Review threads, when the source fetched them. Undefined on values cached
+   * by an older version, which read as having none.
+   */
+  readonly threads?: readonly ReviewThread[]
+}
+
+export interface BotThreads {
+  readonly count: number
+  /** Unresolved bot threads per login, in first-seen order. */
+  readonly byLogin: ReadonlyMap<string, number>
+}
+
+/**
+ * Unresolved review threads opened by bots.
+ *
+ * "Bot" is GitHub's account type, plus any logins named for review bots that
+ * post from an ordinary account. The thread's opening comment decides who
+ * opened it, and a resolved thread is done however it started. Top-level pull
+ * request comments are not threads: bots put summaries there, which need no
+ * action.
+ */
+export function botThreadsOf(
+  pullRequest: PullRequest,
+  extraBotLogins: readonly string[] = []
+): BotThreads {
+  const extra = new Set(extraBotLogins)
+  const byLogin = new Map<string, number>()
+  let count = 0
+  for (const thread of pullRequest.threads ?? []) {
+    const author = thread.author
+    if (thread.resolved || !author || !(author.isBot || extra.has(author.login))) {
+      continue
+    }
+    count++
+    byLogin.set(author.login, (byLogin.get(author.login) ?? 0) + 1)
+  }
+  return { count, byLogin }
+}
+
+/**
+ * `3 bot comments` for the row, or undefined when there are none. Suppressed
+ * once the pull request is merged or closed: nothing is left to address.
+ */
+export function botThreadsSummary(
+  pullRequest: PullRequest,
+  extraBotLogins: readonly string[] = []
+): string | undefined {
+  if (isFinished(pullRequest)) {
+    return undefined
+  }
+  const { count } = botThreadsOf(pullRequest, extraBotLogins)
+  if (count === 0) {
+    return undefined
+  }
+  return count === 1 ? '1 bot comment' : `${count} bot comments`
+}
+
+/**
+ * The pull request a row shows.
+ *
+ * The live one once this window has polled; before that, what the last poll
+ * left in the worktree's metadata, so a window opens with rows filled rather
+ * than blank. The fallback ends with the first answer, so a pull request that
+ * has gone is not kept alive by its file, and it never applies while polling
+ * is turned off.
+ */
+export function displayedPullRequest(
+  live: PullRequest | undefined,
+  lastKnown: PullRequest | undefined,
+  polling: { readonly status: string; readonly fetchedAt?: number }
+): PullRequest | undefined {
+  if (live) {
+    return live
+  }
+  if (polling.status === 'disabled' || polling.fetchedAt !== undefined) {
+    return undefined
+  }
+  return lastKnown
+}
+
+export const DEFAULT_ADDRESS_PROMPT = '/nc-create-pull-request:draft-to-ready ${number}'
+
+/** What the Address button types into the session, from a template. */
+export function addressBotCommentsPrompt(
+  pullRequest: PullRequest,
+  template: string = DEFAULT_ADDRESS_PROMPT
+): string {
+  return fillTemplate(template.trim() || DEFAULT_ADDRESS_PROMPT, {
+    number: String(pullRequest.number),
+    url: pullRequest.url,
+    repository: pullRequest.repository,
+    branch: pullRequest.branch
+  })
 }
 
 /** Identifies a worktree's branch to look up. */

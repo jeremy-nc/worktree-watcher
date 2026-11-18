@@ -12,13 +12,13 @@ export const PENDING_TTL_MS = 2 * 60_000
 /**
  * A request parked for another window.
  *
- * Exactly one of `sessionId` and `prompt` is set: resume a conversation that
- * exists, or start one that does not. A new conversation cannot be identified by
- * id because it has none yet, which is why the two cases cannot share a field.
+ * A `sessionId` resumes a conversation that exists; a `prompt` alone starts one
+ * that does not, which cannot be identified by id because it has none yet. Both
+ * together resume with the text typed in.
  */
 export interface PendingSession {
   readonly sessionId?: string
-  /** Seed text for a conversation that does not exist yet. */
+  /** Text to type into the conversation, new or resumed. */
   readonly prompt?: string
   readonly worktreePath: string
   readonly requestedAt: number

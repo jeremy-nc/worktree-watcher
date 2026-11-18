@@ -2,7 +2,7 @@
   "name": "worktree-watcher",
   "displayName": "Worktree Watcher",
   "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
-  "version": "0.38.0",
+  "version": "0.39.0",
   "publisher": "jeremyheritage",
   "license": "MIT",
   "engines": {
@@ -97,6 +97,12 @@
         "title": "Open Pull Request",
         "category": "Worktrees",
         "icon": "$(git-pull-request)"
+      },
+      {
+        "command": "worktreeWatcher.addressBotComments",
+        "title": "Address Bot Comments",
+        "category": "Worktrees",
+        "icon": "$(robot)"
       },
       {
         "command": "worktreeWatcher.removeWorktree",
@@ -200,6 +206,10 @@
         {
           "command": "worktreeWatcher.showAllWorktrees",
           "when": "worktreeWatcher.filter == 'open-pull-requests'"
+        },
+        {
+          "command": "worktreeWatcher.addressBotComments",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -230,6 +240,11 @@
         }
       ],
       "view/item/context": [
+        {
+          "command": "worktreeWatcher.addressBotComments",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree.*\\.bots/",
+          "group": "inline@0"
+        },
         {
           "command": "worktreeWatcher.openInNewWindow",
           "when": "view == worktreeWatcher.tree && viewItem == worktreeWatcher.repository",
@@ -284,6 +299,11 @@
           "command": "worktreeWatcher.openPullRequest",
           "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree.*\\.pr/",
           "group": "4_github@1"
+        },
+        {
+          "command": "worktreeWatcher.addressBotComments",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree.*\\.bots/",
+          "group": "4_github@0"
         },
         {
           "command": "worktreeWatcher.removeWorktree",
@@ -397,7 +417,20 @@
           "type": "number",
           "default": 5,
           "minimum": 1,
-          "description": "Minutes between pull request polls. One GraphQL request covers every branch; polling only runs while the panel is visible."
+          "description": "Minutes between pull request polls. One GraphQL request covers every branch; polling runs while the panel is visible or the window is focused."
+        },
+        "worktreeWatcher.reviewBots.extraLogins": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "markdownDescription": "Review bots that post from an ordinary GitHub account. Accounts GitHub types as `Bot` are counted without being listed here."
+        },
+        "worktreeWatcher.reviewBots.addressPrompt": {
+          "type": "string",
+          "default": "/nc-create-pull-request:draft-to-ready ${number}",
+          "markdownDescription": "What **Address Bot Comments** types into the worktree's Claude session. Substitutes `${number}`, `${url}`, `${repository}` and `${branch}`. You press Enter."
         },
         "worktreeWatcher.activity.enabled": {
           "type": "boolean",

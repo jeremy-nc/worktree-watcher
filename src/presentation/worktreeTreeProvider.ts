@@ -14,7 +14,15 @@ import {
 import { Repository, Worktree } from '../domain/model'
 import { Activity } from '../domain/activity'
 import { BranchBuilds, buildSummary, buildTypeLabel } from '../domain/build'
-import { isFinished, PullRequest, pullRequestSummary, reviewSummary } from '../domain/pullRequest'
+import {
+  botThreadsOf,
+  botThreadsSummary,
+  displayedPullRequest,
+  isFinished,
+  PullRequest,
+  pullRequestSummary,
+  reviewSummary
+} from '../domain/pullRequest'
 import { passesFilter, WorktreeFilter } from '../domain/worktreeFilter'
 
 /** Looks up what a session is doing, if the feature is on. */
@@ -30,6 +38,8 @@ export interface BuildLookup {
 /** Looks up the pull request for a worktree branch, if the feature is on. */
 export interface PullRequestLookup {
   find(repository: string, branch: string | undefined): PullRequest | undefined
+  /** Whether a poll has answered yet, which decides if a worktree's last known state shows. */
+  readonly current: { readonly status: string; readonly fetchedAt?: number }
 }
 
 export type Node =
@@ -59,7 +69,8 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
     private readonly activities: ActivityLookup,
     private readonly builds: BuildLookup,
     private readonly sessionTitleLength: () => number,
-    private readonly filter: () => WorktreeFilter
+    private readonly filter: () => WorktreeFilter,
+    private readonly extraBotLogins: () => readonly string[]
   ) {
     this.store.onDidChange((state: State) => {
       if (state.status !== 'scanning') {
@@ -104,12 +115,24 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
       const { repository } = node
       return repository.worktrees
         .filter((worktree) =>
-          passesFilter(this.filter(), worktree, this.pullRequests.find(repository.name, worktree.branch))
+          passesFilter(this.filter(), worktree, this.pullRequestFor(repository, worktree))
         )
         .sort(compareWorktrees)
         .map((worktree) => ({ kind: 'worktree', repository, worktree }))
     }
     return []
+  }
+
+  /** The pull request a row shows: live once polled, else the worktree's last known. */
+  pullRequestFor(repository: Repository, worktree: Worktree): PullRequest | undefined {
+    if (worktree.isMain) {
+      return undefined
+    }
+    return displayedPullRequest(
+      this.pullRequests.find(repository.name, worktree.branch),
+      worktree.lastKnownPullRequest,
+      this.pullRequests.current
+    )
   }
 
   /**
@@ -133,9 +156,7 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
       worktree.isMain ? '_Main checkout_' : `_Worktree of ${node.repository.name}_`
     )
 
-    const pullRequest = worktree.isMain
-      ? undefined
-      : this.pullRequests.find(node.repository.name, worktree.branch)
+    const pullRequest = this.pullRequestFor(node.repository, worktree)
     if (pullRequest) {
       tooltip.appendMarkdown(`\n\n**Pull request**\n\n`)
       tooltip.appendMarkdown(`[#${pullRequest.number} ${pullRequest.title}](${pullRequest.url})  \n`)
@@ -147,6 +168,13 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
       tooltip.appendMarkdown(`${facts.join(' · ')}\n`)
       if (isFinished(pullRequest)) {
         tooltip.appendMarkdown(`\n_Nothing left to push — this worktree can probably go._\n`)
+      }
+      const bots = botThreadsOf(pullRequest, this.extraBotLogins())
+      if (bots.count > 0 && !isFinished(pullRequest)) {
+        tooltip.appendMarkdown(`\n**Unresolved bot comments**\n\n`)
+        for (const [login, count] of bots.byLogin) {
+          tooltip.appendMarkdown(`- ${login}: ${count}\n`)
+        }
       }
     }
 
@@ -237,9 +265,7 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
       vscode.TreeItemCollapsibleState.None
     )
     item.id = worktree.absolutePath
-    const pullRequest = worktree.isMain
-      ? undefined
-      : this.pullRequests.find(node.repository.name, worktree.branch)
+    const pullRequest = this.pullRequestFor(node.repository, worktree)
     // The activity word alone, with no elapsed time: nothing re-renders on a
     // timer, so a duration here would freeze and start lying.
     const activity = this.activityFor(worktree)
@@ -250,6 +276,7 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
       worktreeDescription(worktree, this.home),
       pullRequest && pullRequestSummary(pullRequest),
       pullRequest && reviewSummary(pullRequest),
+      pullRequest && botThreadsSummary(pullRequest, this.extraBotLogins()),
       branchBuilds && buildSummary(branchBuilds),
       activity?.label
     ]
@@ -264,7 +291,12 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
     const base = worktree.isMain ? 'worktreeWatcher.mainCheckout' : 'worktreeWatcher.worktree'
     const claude = worktree.claudeSessions.length > 0 ? `${base}.claude` : base
     const withPr = pullRequest ? `${claude}.pr` : claude
-    item.contextValue = branchBuilds ? `${withPr}.build` : withPr
+    const withBuild = branchBuilds ? `${withPr}.build` : withPr
+    // `.bots` reveals Address Bot Comments; only on a draft, which is the one
+    // state draft-to-ready works on.
+    const addressable =
+      pullRequest?.state === 'draft' && botThreadsSummary(pullRequest, this.extraBotLogins())
+    item.contextValue = addressable ? `${withBuild}.bots` : withBuild
 
     // Left undefined so VS Code calls resolveTreeItem on hover: session titles
     // need an async read, and this keeps it off the render path entirely.

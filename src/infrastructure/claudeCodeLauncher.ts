@@ -67,7 +67,11 @@ export class ClaudeCodeLauncher {
     private readonly logger: Logger
   ) {}
 
-  async open(sessionId: string, worktreePath: string): Promise<void> {
+  /**
+   * `prompt`, when given, is typed into the resumed conversation's input, the
+   * way `start` seeds a new one.
+   */
+  async open(sessionId: string, worktreePath: string, prompt?: string): Promise<void> {
     // Open where the session actually ran, which is not always the worktree it is
     // listed against — the worktree path is only a fallback.
     const recorded = await this.transcripts.workingDirectory(sessionId)
@@ -76,20 +80,20 @@ export class ClaudeCodeLauncher {
       this.logger.info(`session ${sessionId} ran in ${recorded}, not ${worktreePath}`)
     }
 
-    return this.openIn(sessionId, target)
+    return this.openIn(sessionId, target, prompt)
   }
 
-  private async openIn(sessionId: string, worktreePath: string): Promise<void> {
+  private async openIn(sessionId: string, worktreePath: string, prompt?: string): Promise<void> {
     this.logger.info(`open ${sessionId} for ${worktreePath}`)
     if (isFolderOpen(worktreePath, workspacePaths())) {
-      await this.openHere(sessionId, 0)
+      await this.openHere(sessionId, 0, prompt)
       return
     }
     this.logger.info(`worktree not open here (${workspacePaths().join(', ') || 'no folders'}); parking request`)
 
     // The worktree is not open in this window. Park the request, open the
     // folder, and let the window that lands on it pick the request up.
-    await this.pending.write({ sessionId, worktreePath, requestedAt: Date.now() })
+    await this.pending.write({ sessionId, prompt, worktreePath, requestedAt: Date.now() })
     await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(worktreePath), {
       forceNewWindow: true
     })
@@ -125,18 +129,17 @@ export class ClaudeCodeLauncher {
       return
     }
 
-    if (pending.prompt !== undefined) {
-      this.logger.info('claimed pending new-session request')
-      await this.startHere(pending.prompt)
-      return
-    }
     if (pending.sessionId === undefined) {
+      if (pending.prompt !== undefined) {
+        this.logger.info('claimed pending new-session request')
+        await this.startHere(pending.prompt)
+      }
       return
     }
 
     this.logger.info(`claimed pending session ${pending.sessionId}`)
     // This window is still restoring, so give its tabs time to appear.
-    await this.openHere(pending.sessionId, TAB_SETTLE_TIMEOUT_MS)
+    await this.openHere(pending.sessionId, TAB_SETTLE_TIMEOUT_MS, pending.prompt)
   }
 
   /**
@@ -170,7 +173,7 @@ export class ClaudeCodeLauncher {
   }
 
   /** Opens (or focuses) a session whose worktree is open in this window. */
-  private async openHere(sessionId: string, settleMs: number): Promise<void> {
+  private async openHere(sessionId: string, settleMs: number, prompt?: string): Promise<void> {
     // A freshly started window activates this extension alongside Claude Code,
     // so the command may not exist yet. Waiting beats silently dropping the
     // request, which is what checking once would do.
@@ -178,6 +181,15 @@ export class ClaudeCodeLauncher {
       void vscode.window.showWarningMessage(
         'Claude Code did not become available, so the session could not be opened.'
       )
+      return
+    }
+
+    // With text to type in, go straight to the open command: focusing a tab
+    // would leave the prompt behind, and Claude Code activates an already-open
+    // session rather than duplicating it.
+    if (prompt !== undefined) {
+      await vscode.commands.executeCommand(OPEN_SESSION_COMMAND, sessionId, prompt)
+      await this.focusInput()
       return
     }
 

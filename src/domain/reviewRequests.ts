@@ -271,20 +271,22 @@ export function botSessionPrompt(
   pullRequest: ReviewRequest,
   template: string = DEFAULT_SESSION_PROMPT
 ): string {
-  const filled = fillTemplate(template.trim() || DEFAULT_SESSION_PROMPT, pullRequest)
-  return filled.includes(pullRequest.url) ? filled : `${filled} — ${pullRequest.url}`
-}
-
-function fillTemplate(template: string, pullRequest: ReviewRequest): string {
-  const values: Record<string, string> = {
+  const filled = fillTemplate(template.trim() || DEFAULT_SESSION_PROMPT, {
     url: pullRequest.url,
     repository: pullRequest.repository,
     branch: pullRequest.branch,
     number: String(pullRequest.number),
     title: pullRequest.title
-  }
-  // An unknown placeholder is left as written rather than blanked, so a typo is
-  // visible in the prompt instead of silently losing text.
+  })
+  return filled.includes(pullRequest.url) ? filled : `${filled} — ${pullRequest.url}`
+}
+
+/**
+ * Substitutes `${name}` placeholders. An unknown placeholder is left as written
+ * rather than blanked, so a typo is visible in the prompt instead of silently
+ * losing text.
+ */
+export function fillTemplate(template: string, values: Record<string, string>): string {
   return template.replace(/\$\{(\w+)\}/g, (whole, name: string) => values[name] ?? whole)
 }
 

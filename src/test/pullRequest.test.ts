@@ -13,6 +13,13 @@ import {
   reviewSummary
 } from '../domain/pullRequest'
 import { buildQuery } from '../infrastructure/ghPullRequestSource'
+import {
+  addressBotCommentsPrompt,
+  botThreadsOf,
+  botThreadsSummary,
+  displayedPullRequest,
+  ReviewThread
+} from '../domain/pullRequest'
 
 function pr(overrides: Partial<PullRequest> = {}): PullRequest {
   return {
@@ -187,5 +194,112 @@ describe('reviewSummary', () => {
   it('drops the review once the pull request is settled', () => {
     assert.equal(reviewSummary(open('approved', 'merged')), undefined)
     assert.equal(reviewSummary(open('approved', 'closed')), undefined)
+  })
+})
+
+function withThreads(threads: readonly ReviewThread[] | undefined, state: PullRequest['state'] = 'draft'): PullRequest {
+  return {
+    repository: 'core-service',
+    branch: 'fix/ABC-984',
+    number: 469,
+    title: 'Fix it',
+    url: 'https://github.com/example/core-service/pull/469',
+    state,
+    threads
+  }
+}
+
+const augment: ReviewThread = { resolved: false, author: { login: 'augmentcode[bot]', isBot: true } }
+const copilot: ReviewThread = { resolved: false, author: { login: 'copilot', isBot: true } }
+const alice: ReviewThread = { resolved: false, author: { login: 'alice', isBot: false } }
+const reviewerBot: ReviewThread = { resolved: false, author: { login: 'nc-reviewer', isBot: false } }
+
+describe('botThreadsOf', () => {
+  describe('threads from bots, a person, and a resolved bot thread', () => {
+    it('counts only the unresolved bot threads, per login', () => {
+      const threads = botThreadsOf(withThreads([augment, augment, copilot, alice, { ...augment, resolved: true }]))
+      assert.equal(threads.count, 3)
+      assert.deepEqual([...threads.byLogin], [['augmentcode[bot]', 2], ['copilot', 1]])
+    })
+  })
+
+  describe('a review bot that posts from an ordinary account', () => {
+    it('counts once its login is listed', () => {
+      assert.equal(botThreadsOf(withThreads([reviewerBot])).count, 0)
+      assert.equal(botThreadsOf(withThreads([reviewerBot]), ['nc-reviewer']).count, 1)
+    })
+  })
+
+  describe('a value cached before threads were fetched', () => {
+    it('has none', () => {
+      assert.equal(botThreadsOf(withThreads(undefined)).count, 0)
+    })
+  })
+})
+
+describe('botThreadsSummary', () => {
+  describe('one thread', () => {
+    it('is singular', () => {
+      assert.equal(botThreadsSummary(withThreads([augment])), '1 bot comment')
+    })
+  })
+
+  describe('several threads', () => {
+    it('is plural', () => {
+      assert.equal(botThreadsSummary(withThreads([augment, copilot])), '2 bot comments')
+    })
+  })
+
+  describe('no bot threads', () => {
+    it('shows nothing', () => {
+      assert.equal(botThreadsSummary(withThreads([alice])), undefined)
+    })
+  })
+
+  describe('a merged pull request with threads still open', () => {
+    it('shows nothing, since there is nothing left to address', () => {
+      assert.equal(botThreadsSummary(withThreads([augment], 'merged')), undefined)
+    })
+  })
+})
+
+describe('displayedPullRequest', () => {
+  const live = withThreads([augment])
+  const lastKnown = withThreads([], 'open')
+
+  describe('once a poll has answered', () => {
+    it('shows the live pull request, or nothing when the branch has none now', () => {
+      assert.equal(displayedPullRequest(live, lastKnown, { status: 'ready', fetchedAt: 1 }), live)
+      assert.equal(displayedPullRequest(undefined, lastKnown, { status: 'ready', fetchedAt: 1 }), undefined)
+    })
+  })
+
+  describe('before the first poll answers', () => {
+    it('shows what the last poll left in the worktree', () => {
+      assert.equal(displayedPullRequest(undefined, lastKnown, { status: 'loading' }), lastKnown)
+    })
+  })
+
+  describe('with polling turned off', () => {
+    it('shows nothing', () => {
+      assert.equal(displayedPullRequest(undefined, lastKnown, { status: 'disabled' }), undefined)
+    })
+  })
+})
+
+describe('addressBotCommentsPrompt', () => {
+  describe('the default template', () => {
+    it('runs draft-to-ready on the pull request number', () => {
+      assert.equal(addressBotCommentsPrompt(withThreads([])), '/nc-create-pull-request:draft-to-ready 469')
+    })
+  })
+
+  describe('a custom template', () => {
+    it('substitutes the url and leaves unknown placeholders visible', () => {
+      assert.equal(
+        addressBotCommentsPrompt(withThreads([]), 'Fix the bot comments on ${url} ${nope}'),
+        'Fix the bot comments on https://github.com/example/core-service/pull/469 ${nope}'
+      )
+    })
   })
 })

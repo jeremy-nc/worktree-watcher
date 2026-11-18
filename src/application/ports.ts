@@ -5,6 +5,7 @@
  */
 import { ClaudeSession, Scan } from '../domain/model'
 import { BranchRef, PullRequest } from '../domain/pullRequest'
+import { PullRequestSidecar } from '../domain/pullRequestSidecar'
 import { WorktreeStatus } from '../domain/removal'
 import { Activity } from '../domain/activity'
 import { ReviewScope } from '../domain/reviewRequests'
@@ -84,6 +85,12 @@ export interface PullRequestSource {
   /** False when the client is missing or unauthenticated — not an error. */
   available(): Promise<boolean>
   fetch(refs: readonly BranchRef[]): Promise<readonly PullRequest[]>
+}
+
+/** Keeps `pull-request.json` in a worktree's metadata directory. */
+export interface PullRequestSidecarWriter {
+  write(metadataPath: string, sidecar: PullRequestSidecar): Promise<void>
+  remove(metadataPath: string): Promise<void>
 }
 
 export interface GitHubSettings {

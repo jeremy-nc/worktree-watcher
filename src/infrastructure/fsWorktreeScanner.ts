@@ -13,6 +13,12 @@ import {
   SESSION_SIDECARS,
   Worktree
 } from '../domain/model'
+import { PullRequest } from '../domain/pullRequest'
+import {
+  PULL_REQUEST_SIDECAR,
+  parseSidecar,
+  pullRequestFromSidecar
+} from '../domain/pullRequestSidecar'
 
 /**
  * Discovers worktrees by reading the filesystem — no `git` subprocess.
@@ -132,6 +138,8 @@ export class FsWorktreeScanner implements WorktreeScanner {
       folderPath: path.relative(worktreesRoot, directory),
       isMain: false,
       claudeSessions: await this.readSessions(gitDir),
+      metadataPath: gitDir,
+      lastKnownPullRequest: await readLastKnownPullRequest(gitDir),
       ...(head ? parseHead(head) : {})
     }
   }
@@ -172,6 +180,13 @@ export class FsWorktreeScanner implements WorktreeScanner {
       ...(head ? parseHead(head) : {})
     }
   }
+}
+
+/** The pull request the last poll recorded here, so a row is not blank until the next. */
+async function readLastKnownPullRequest(gitDir: string): Promise<PullRequest | undefined> {
+  const contents = await readFile(path.join(gitDir, PULL_REQUEST_SIDECAR))
+  const sidecar = contents ? parseSidecar(contents) : undefined
+  return sidecar ? pullRequestFromSidecar(sidecar) : undefined
 }
 
 /** Missing or unreadable directories are a normal state here, not an error. */

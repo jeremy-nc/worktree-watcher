@@ -62,6 +62,21 @@ describe('FsWorktreeScanner', () => {
       `${root}/report-service/.git/worktrees/ABC-123/claude-session`,
       'b1c2d3e4-1111-2222-3333-444455556666\n'
     )
+    // What the last pull request poll left behind for this worktree.
+    await write(
+      `${root}/report-service/.git/worktrees/ABC-123/worktree-watcher/pull-request.json`,
+      JSON.stringify({
+        repository: 'report-service',
+        branch: 'feature/ABC-123-cleanup-pubsub-push-handlers',
+        url: 'https://github.com/example/report-service/pull/469',
+        number: 469,
+        title: 'Clean up the push handlers',
+        state: 'draft',
+        botThreads: 2,
+        bots: { 'augmentcode[bot]': 2 },
+        fetchedAt: '2026-11-18T09:12:04Z'
+      })
+    )
     // A stale or hand-edited sidecar must be ignored rather than displayed.
     await write(
       `${root}/report-service/.git/worktrees/spike/claude-sessions`,
@@ -133,6 +148,14 @@ describe('FsWorktreeScanner', () => {
       worktree.claudeSessions.some((session) => session.id.startsWith('c0ffee00')),
       false
     )
+  })
+
+  it('carries the metadata directory and the last known pull request', () => {
+    const worktree = find(scan, 'report-service', 'ABC-123')
+    assert.equal(worktree.metadataPath, `${root}/report-service/.git/worktrees/ABC-123`)
+    assert.equal(worktree.lastKnownPullRequest?.number, 469)
+    assert.equal(worktree.lastKnownPullRequest?.threads?.length, 2)
+    assert.equal(find(scan, 'report-service', 'spike').lastKnownPullRequest, undefined)
   })
 
   it('still reads the legacy single-id sidecar filename', () => {

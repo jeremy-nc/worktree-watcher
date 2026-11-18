@@ -3,6 +3,7 @@ import * as path from 'node:path'
 import * as vscode from 'vscode'
 
 import { DEFAULT_STALE_DAYS } from '../domain/cleanUp'
+import { DEFAULT_ADDRESS_PROMPT } from '../domain/pullRequest'
 import { DEFAULT_SESSION_TITLE_LENGTH } from '../domain/display'
 import {
   DEFAULT_REVIEW_SCOPE,
@@ -141,6 +142,17 @@ export class VscodeSettings implements Settings {
   /** Opening message for a session started against a pull request. */
   get sessionPrompt(): string {
     return this.read<string>('reviewRequests.sessionPrompt', DEFAULT_SESSION_PROMPT)
+  }
+
+  /** Review bots that post from an ordinary account, counted as bots anyway. */
+  get extraBotLogins(): readonly string[] {
+    const logins = this.read<unknown>('reviewBots.extraLogins', [])
+    return Array.isArray(logins) ? logins.filter((login): login is string => typeof login === 'string') : []
+  }
+
+  /** What the Address button types into the worktree's session. */
+  get addressPrompt(): string {
+    return this.read<string>('reviewBots.addressPrompt', DEFAULT_ADDRESS_PROMPT)
   }
 
   /** Scratch directory for working on dependency-bump pull requests. */

@@ -12,6 +12,8 @@
  * is therefore always read from git, never inferred from the path.
  */
 
+import { PullRequest } from './pullRequest'
+
 /** Suffix marking a directory as a repository's worktree container. */
 export const WORKTREES_SUFFIX = '.worktrees'
 
@@ -30,6 +32,13 @@ export interface Worktree {
    * Empty for worktrees created by hand.
    */
   readonly claudeSessions: readonly ClaudeSession[]
+  /**
+   * Git's per-worktree metadata directory, `.git/worktrees/<name>`, where this
+   * extension keeps what it knows about the worktree. Absent for the main checkout.
+   */
+  readonly metadataPath?: string
+  /** What the last poll left in that directory about the branch's pull request. */
+  readonly lastKnownPullRequest?: PullRequest
 }
 
 export interface ClaudeSession {

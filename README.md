@@ -85,6 +85,103 @@ Open Pull Requests** (outline filter) and **Show All Worktrees** (filled filter)
 swapped by the `worktreeWatcher.filter` context key. The choice is kept per window
 in workspace state: it survives a reload, and other windows keep their own.
 
+## Bot review comments
+
+Bots comment on a pull request before any person reads it. Each worktree row
+counts the review threads that bots have opened and nobody has resolved:
+
+```
+     fix/ABC-984-web-client-5xx        #469 draft  ·  3 bot comments  ·  idle
+```
+
+Hover for which bots and how many each. A thread counts when it is unresolved
+and its opening comment came from an account GitHub types as `Bot`, or from a
+login in `worktreeWatcher.reviewBots.extraLogins` (for review bots that post
+from an ordinary account). Top-level pull request comments are not threads and
+are not counted: bots put summaries there, which need no action. The count
+disappears once the pull request is merged or closed.
+
+The threads ride the same single GraphQL request as everything else on the row.
+
+### Address Bot Comments
+
+A draft with bot comments gets an inline `$(robot)` action. It opens the
+worktree's most recent Claude session with a prompt typed in, by default
+
+```
+/nc-create-pull-request:draft-to-ready 469
+```
+
+and puts the cursor in the box. You press Enter. `draft-to-ready` reads every
+thread, classifies each as a trivial fix or your call, stops once for your
+approval, then fixes, pushes, waits for the bots to re-review and repeats until
+they have nothing left. A worktree with no session gets a new one seeded the
+same way. `worktreeWatcher.reviewBots.addressPrompt` is the template,
+substituting `${number}`, `${url}`, `${repository}` and `${branch}`. The
+action shows only on drafts, the one state `draft-to-ready` works on.
+
+The session that wrote the code does the work. The extension never starts a
+Claude process itself: every way of doing that (a hidden terminal,
+`claude --bg`, `claude -p`) was tried and ended with two processes writing one
+transcript, or with a session the panel would not list.
+
+### The worktree metadata folder
+
+Everything this extension and its skills keep about a worktree lives in one
+folder inside git's own per-worktree metadata:
+
+```
+<repo>/.git/worktrees/<name>/worktree-watcher/
+  claude-sessions        the /worktree-watcher skill's hook and script
+  pull-request.json      this extension, after each poll
+```
+
+Git deletes the directory with `git worktree remove`, never shows it in
+`git status`, and cannot commit it, so there is nothing to ignore and nothing
+to prune.
+
+`pull-request.json` is what the last poll learned about the branch's pull
+request, written for the `/worktree-watcher-watch-review` skill to read without
+asking GitHub, and read back by the scanner so a window opens with its rows
+filled rather than blank until the first poll returns:
+
+```json
+{
+  "repository": "core-service",
+  "branch": "fix/ABC-984-web-client-5xx",
+  "url": "https://github.com/UpsideRealty/core-service/pull/469",
+  "number": 469,
+  "title": "Return 503 while the web client warms up",
+  "state": "draft",
+  "checks": "pending",
+  "botThreads": 3,
+  "bots": { "augmentcode[bot]": 3 },
+  "fetchedAt": "2026-11-18T09:12:04Z"
+}
+```
+
+Writes are atomic (temporary file, then rename) so a reader never sees half a
+file, and skipped when nothing but `fetchedAt` changed, so the file's
+modification time means the pull request moved. A branch whose pull request
+disappears has its file removed on the next poll. The main checkout has none.
+
+### Polling while the window is focused
+
+The file only changes when a poll runs, so pull requests are polled whenever
+**the panel is visible or the window is focused**, where everything else on the
+row still waits for the panel. A session waiting on its worktree's file would
+otherwise wake only when you clicked the Worktrees tab.
+
+| Situation | Pull request poll |
+|---|---|
+| Worktrees panel visible | Immediately when shown, then every interval |
+| Panel hidden, VS Code window focused | Every interval |
+| Several windows | One request; the others read the shared cache |
+| VS Code in the background | None, until it is focused again |
+
+The shared cache keeps this to one request per interval across windows, as
+before.
+
 ### Why the review needs two sources
 
 `reviewDecision` is the obvious field, and on its own it is wrong for half our

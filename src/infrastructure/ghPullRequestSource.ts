@@ -9,6 +9,7 @@ import {
   PullRequestState,
   ReviewDecision,
   ReviewState,
+  ReviewThread,
   resolveReview
 } from '../domain/pullRequest'
 
@@ -127,6 +128,15 @@ const PR_FRAGMENT = `fragment prFields on SearchResultItemConnection {
       # approvals a pull request has.
       latestReviews(first: 20) { nodes { state } }
       commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+      # Review threads, with who opened each: the row counts the unresolved
+      # ones opened by bots, and the worktree's sidecar carries that count to
+      # the session working there.
+      reviewThreads(first: 100) {
+        nodes {
+          isResolved
+          comments(first: 1) { nodes { author { __typename login } } }
+        }
+      }
     }
   }
 }`
@@ -180,6 +190,14 @@ interface RawPullRequest {
   reviewDecision?: string | null
   latestReviews?: { nodes?: Array<{ state?: string } | null> | null } | null
   commits?: { nodes?: Array<{ commit?: { statusCheckRollup?: { state?: string } | null } }> }
+  reviewThreads?: { nodes?: Array<RawReviewThread | null> | null } | null
+}
+
+interface RawReviewThread {
+  isResolved?: boolean
+  comments?: {
+    nodes?: Array<{ author?: { __typename?: string; login?: string } | null } | null> | null
+  } | null
 }
 
 function toPullRequest(node: RawPullRequest, repository: string): PullRequest | undefined {
@@ -200,7 +218,18 @@ function toPullRequest(node: RawPullRequest, repository: string): PullRequest | 
         .map((review) => toReviewState(review?.state))
         .filter((state): state is ReviewState => state !== undefined)
     ),
-    updatedAt: node.updatedAt
+    updatedAt: node.updatedAt,
+    threads: (node.reviewThreads?.nodes ?? [])
+      .filter((thread): thread is RawReviewThread => thread !== null)
+      .map(toReviewThread)
+  }
+}
+
+function toReviewThread(thread: RawReviewThread): ReviewThread {
+  const author = thread.comments?.nodes?.[0]?.author
+  return {
+    resolved: thread.isResolved === true,
+    ...(author?.login && { author: { login: author.login, isBot: author.__typename === 'Bot' } })
   }
 }
 
