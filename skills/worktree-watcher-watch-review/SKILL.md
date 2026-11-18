@@ -1,14 +1,15 @@
 ---
 name: worktree-watcher-watch-review
-description: Wait, from inside a worktree's own Claude session, for review bots to comment on its draft pull request, then run /nc-create-pull-request:draft-to-ready on them. Use after raising a draft pull request from a worktree under ~/Code/<repo>.worktrees, when the user asks to watch for bot comments, address bot review when it arrives, or get the pull request ready for human review once the bots are done.
+description: Wait, from inside a worktree's own Claude session, for review bots to comment on its draft pull request, then read the comments and propose fixes without changing anything. Use after raising a draft pull request from a worktree under ~/Code/<repo>.worktrees, when the user asks to watch for bot comments, plan how to address bot review when it arrives, or see what the bots want before deciding.
 ---
 
 # Worktree Watcher: watch for bot review
 
 Bots comment on a draft pull request within minutes of a push, before any
 person reads it. This skill parks a background task that wakes this session
-when they do, so the session that wrote the code addresses them, with you
-approving the plan.
+when they do, so the session that wrote the code reads them and proposes what
+to do. It changes nothing: fixing, pushing and the bot re-review loop start only
+when the user asks.
 
 It only works inside a worktree that the **Worktree Watcher** VS Code panel is
 watching: the task reads a file the panel writes after each of its pull request
@@ -43,14 +44,15 @@ and exits the moment the panel records bot threads, which wakes this session.
 
 | Last line | Do |
 |---|---|
-| `bot-threads N` | Run `/nc-create-pull-request:draft-to-ready <n>`. It reads every thread, classifies each as a trivial fix or your call, and **stops at its single confirmation gate** for the user. Nothing is pushed until they say so. |
+| `bot-threads N` | Run `/nc-create-pull-request:draft-to-ready <n> --dry`. That is its planning phase alone: it reads every thread, says which it would fix and how, and which need the user's call, and **writes nothing**: no replies, no reactions, no pushes. Present that plan and stop. If the user then wants it done, run `/nc-create-pull-request:draft-to-ready <n>` without `--dry`; it stops once more at its own confirmation gate before changing anything. |
 | `ready` | Say the pull request is already open for review, and stop. |
 | `merged` or `closed` | Say so, and stop. |
 | `timeout` | Say nothing has happened in a day, and offer to watch again. |
 | exit status 1 | Report the message. The skill only works inside a worktree. |
 
-This is deliberately one-shot. Once `draft-to-ready` is running, its own loop
-handles every later round of bot reviews, so do not restart the watcher.
+This is deliberately one-shot. If the user goes on to run `draft-to-ready` for
+real, its own loop handles every later round of bot reviews, so do not restart
+the watcher.
 
 ## Where the file comes from
 
@@ -73,5 +75,7 @@ was raised. That is normal for the first few minutes.
 - Poll GitHub from this skill, or decide for yourself what counts as a bot.
   Worktree Watcher owns both, and the panel's badge and this task must agree.
 - Run `draft-to-ready` before the task has exited. There is nothing to address.
+- Drop `--dry` on your own initiative. The user decides whether the fixes
+  happen, after reading the plan.
 - Push, resolve threads, or mark the pull request ready yourself. All of that
   is `draft-to-ready`'s, behind its confirmation gate.

@@ -118,7 +118,12 @@ export function displayedPullRequest(
   return lastKnown
 }
 
-export const DEFAULT_ADDRESS_PROMPT = '/nc-create-pull-request:draft-to-ready ${number}'
+/**
+ * `--dry` is draft-to-ready's planning phase alone: it reads the threads and
+ * proposes fixes without writing anything. The fix-push-re-review loop starts
+ * only when the user asks for it, by dropping the flag.
+ */
+export const DEFAULT_ADDRESS_PROMPT = '/nc-create-pull-request:draft-to-ready ${number} --dry'
 
 /** What the Address button types into the session, from a template. */
 export function addressBotCommentsPrompt(

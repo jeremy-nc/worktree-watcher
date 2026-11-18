@@ -289,8 +289,8 @@ describe('displayedPullRequest', () => {
 
 describe('addressBotCommentsPrompt', () => {
   describe('the default template', () => {
-    it('runs draft-to-ready on the pull request number', () => {
-      assert.equal(addressBotCommentsPrompt(withThreads([])), '/nc-create-pull-request:draft-to-ready 469')
+    it('plans with draft-to-ready --dry on the pull request number', () => {
+      assert.equal(addressBotCommentsPrompt(withThreads([])), '/nc-create-pull-request:draft-to-ready 469 --dry')
     })
   })
 

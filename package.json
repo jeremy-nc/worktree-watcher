@@ -2,7 +2,7 @@
   "name": "worktree-watcher",
   "displayName": "Worktree Watcher",
   "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
-  "version": "0.39.0",
+  "version": "0.40.0",
   "publisher": "jeremyheritage",
   "license": "MIT",
   "engines": {
@@ -429,8 +429,8 @@
         },
         "worktreeWatcher.reviewBots.addressPrompt": {
           "type": "string",
-          "default": "/nc-create-pull-request:draft-to-ready ${number}",
-          "markdownDescription": "What **Address Bot Comments** types into the worktree's Claude session. Substitutes `${number}`, `${url}`, `${repository}` and `${branch}`. You press Enter."
+          "default": "/nc-create-pull-request:draft-to-ready ${number} --dry",
+          "markdownDescription": "What **Address Bot Comments** types into the worktree's Claude session. Substitutes `${number}`, `${url}`, `${repository}` and `${branch}`. You press Enter. The default's `--dry` reads the comments and proposes fixes without changing anything; drop it to let `draft-to-ready` fix, push and loop with the bots (it still stops once for your approval)."
         },
         "worktreeWatcher.activity.enabled": {
           "type": "boolean",

@@ -109,16 +109,19 @@ A draft with bot comments gets an inline `$(robot)` action. It opens the
 worktree's most recent Claude session with a prompt typed in, by default
 
 ```
-/nc-create-pull-request:draft-to-ready 469
+/nc-create-pull-request:draft-to-ready 469 --dry
 ```
 
-and puts the cursor in the box. You press Enter. `draft-to-ready` reads every
-thread, classifies each as a trivial fix or your call, stops once for your
-approval, then fixes, pushes, waits for the bots to re-review and repeats until
-they have nothing left. A worktree with no session gets a new one seeded the
-same way. `worktreeWatcher.reviewBots.addressPrompt` is the template,
-substituting `${number}`, `${url}`, `${repository}` and `${branch}`. The
-action shows only on drafts, the one state `draft-to-ready` works on.
+and puts the cursor in the box. You press Enter. With `--dry`, `draft-to-ready`
+runs its planning phase only: it reads every thread, says which it would fix
+and how, and which need your call, and writes nothing. If you want it done,
+run the same command without `--dry`; it fixes, pushes, waits for the bots to
+re-review and repeats until they have nothing left, stopping once more for your
+approval first. A worktree with no session gets a new one seeded the same way.
+`worktreeWatcher.reviewBots.addressPrompt` is the template, substituting
+`${number}`, `${url}`, `${repository}` and `${branch}`; drop `--dry` there to
+make the full run the default. The action shows only on drafts, the one state
+`draft-to-ready` works on.
 
 The session that wrote the code does the work. The extension never starts a
 Claude process itself: every way of doing that (a hidden terminal,
@@ -195,21 +198,22 @@ raising a draft pull request from a worktree, run
 in that session. It starts `scripts/watch-review.sh` as a **background task**
 and goes idle. The script reads the worktree's `pull-request.json` every five
 seconds and exits the moment it records bot threads; that exit is what wakes
-the session, which then runs `draft-to-ready` and stops at its confirmation
-gate for you. No tokens are spent while it waits, and the script never touches
+the session, which then runs `draft-to-ready --dry` and shows you its plan:
+what each bot wants, what it would fix and how, what needs your call. Nothing
+is changed until you ask for the full run. No tokens are spent while it waits, and the script never touches
 GitHub: Worktree Watcher decides what a bot is, so the badge and the wake-up
 always agree.
 
 | The file says | The script prints | The session then |
 |---|---|---|
-| `botThreads > 0` | `bot-threads N` | runs `/nc-create-pull-request:draft-to-ready <n>` |
+| `botThreads > 0` | `bot-threads N` | runs `/nc-create-pull-request:draft-to-ready <n> --dry` and presents the plan |
 | `state` is `open` | `ready` | says the pull request is already with its reviewers |
 | `merged` or `closed` | that word | says so, stops |
 | missing, or `botThreads` is 0 | nothing yet | stays idle |
 | nothing for a day | `timeout` | offers to watch again |
 
-It is one-shot by design: once `draft-to-ready` is running, its own loop
-handles every later round of bot reviews. And because the file only moves when
+It is one-shot by design: if you go on to run `draft-to-ready` for real, its
+own loop handles every later round of bot reviews. And because the file only moves when
 the panel polls, a session wakes within one interval while VS Code is in use,
 and not at all while it is in the background; the badge is the fallback for a
 session that was closed.
