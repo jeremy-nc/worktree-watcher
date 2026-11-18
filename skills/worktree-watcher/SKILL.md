@@ -1,5 +1,5 @@
 ---
-name: worktree
+name: worktree-watcher
 description: Create a git worktree for a NurtureCloud repository following the ~/Code naming convention, branched from the remote default branch, and record the Claude session that requested it so the conversation can be resumed from that worktree later. Use when the user asks to create a worktree, start work on a ticket in a separate checkout, or set up a workspace for a repository they are not currently inside — including when the current directory is not a git repository at all.
 ---
 
