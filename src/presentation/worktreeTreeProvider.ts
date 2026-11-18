@@ -15,6 +15,7 @@ import { Repository, Worktree } from '../domain/model'
 import { Activity } from '../domain/activity'
 import { BranchBuilds, buildSummary, buildTypeLabel } from '../domain/build'
 import { isFinished, PullRequest, pullRequestSummary, reviewSummary } from '../domain/pullRequest'
+import { passesFilter, WorktreeFilter } from '../domain/worktreeFilter'
 
 /** Looks up what a session is doing, if the feature is on. */
 export interface ActivityLookup {
@@ -57,7 +58,8 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
     private readonly pullRequests: PullRequestLookup,
     private readonly activities: ActivityLookup,
     private readonly builds: BuildLookup,
-    private readonly sessionTitleLength: () => number
+    private readonly sessionTitleLength: () => number,
+    private readonly filter: () => WorktreeFilter
   ) {
     this.store.onDidChange((state: State) => {
       if (state.status !== 'scanning') {
@@ -85,7 +87,7 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
     }
   }
 
-  /** Redraw without rescanning — used when pull request status lands. */
+  /** Redraw without rescanning — used when pull request status lands, or the filter changes. */
   refresh(): void {
     this.changed.fire(undefined)
   }
@@ -99,9 +101,13 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
       return this.store.current.repositories.map((repository) => ({ kind: 'repository', repository }))
     }
     if (node.kind === 'repository') {
-      return [...node.repository.worktrees]
+      const { repository } = node
+      return repository.worktrees
+        .filter((worktree) =>
+          passesFilter(this.filter(), worktree, this.pullRequests.find(repository.name, worktree.branch))
+        )
         .sort(compareWorktrees)
-        .map((worktree) => ({ kind: 'worktree', repository: node.repository, worktree }))
+        .map((worktree) => ({ kind: 'worktree', repository, worktree }))
     }
     return []
   }

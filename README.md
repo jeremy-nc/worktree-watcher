@@ -71,6 +71,20 @@ Hover for the title, checks, review decision and a link; right-click for **Open
 Pull Request**. A merged or closed PR means nothing is left to push, which the
 tooltip says plainly — it is the signal that a worktree can go.
 
+### Showing only open pull requests
+
+The filter button beside **Check Out Review Requests** narrows each repository to
+worktrees whose pull request is **open**. Drafts, merged and closed pull requests,
+and branches with no pull request yet are hidden. The main checkout and every
+repository row stay, so the tree keeps its shape and only the branches under each
+`<repo>.worktrees/` entry come and go. The view title reads *open pull requests*
+while it is on.
+
+VS Code's title bar has no toggle button, so this is two commands, **Show Only
+Open Pull Requests** (outline filter) and **Show All Worktrees** (filled filter),
+swapped by the `worktreeWatcher.filter` context key. The choice is kept per window
+in workspace state: it survives a reload, and other windows keep their own.
+
 ### Why the review needs two sources
 
 `reviewDecision` is the obvious field, and on its own it is wrong for half our

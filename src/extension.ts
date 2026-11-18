@@ -60,6 +60,7 @@ import { PendingSessionStore } from './infrastructure/pendingSessionStore'
 import { FsWorktreeScanner } from './infrastructure/fsWorktreeScanner'
 import { OutputLogger } from './infrastructure/outputLogger'
 import { tildify, worktreeLabel } from './domain/display'
+import { WorktreeFilter } from './domain/worktreeFilter'
 import { buildBelongsTo } from './domain/build'
 import {
   SECTION,
@@ -73,6 +74,9 @@ import { ReviewRequestStatusBar } from './presentation/reviewRequestStatusBar'
 import { Node, WorktreeTreeProvider } from './presentation/worktreeTreeProvider'
 
 const VIEW_ID = 'worktreeWatcher.tree'
+
+/** Both the workspace-state key and the context key the title-bar toggle reads. */
+const FILTER_KEY = 'worktreeWatcher.filter'
 
 /**
  * Composition root. The only place that knows about every layer: it constructs
@@ -167,13 +171,16 @@ export function activate(context: vscode.ExtensionContext): void {
     logger
   )
 
+  // Per window: one window can watch open pull requests while another shows everything.
+  let filter = context.workspaceState.get<WorktreeFilter>(FILTER_KEY, 'all')
   const provider = new WorktreeTreeProvider(
     store,
     transcripts,
     pullRequests,
     activities,
     builds,
-    () => settings.sessionTitleLength
+    () => settings.sessionTitleLength,
+    () => filter
   )
 
   // The poller follows the scan: whatever branches exist are what it asks about.
@@ -190,6 +197,15 @@ export function activate(context: vscode.ExtensionContext): void {
     void provider.refreshTitles()
   })
   const tree = vscode.window.createTreeView<Node>(VIEW_ID, { treeDataProvider: provider })
+
+  const applyFilter = (next: WorktreeFilter): void => {
+    filter = next
+    void context.workspaceState.update(FILTER_KEY, next)
+    void vscode.commands.executeCommand('setContext', FILTER_KEY, next)
+    tree.description = next === 'open-pull-requests' ? 'open pull requests' : undefined
+    provider.refresh()
+  }
+  applyFilter(filter)
 
   // Scan and watch only while the view is on screen.
   let active = tree.visible ? activateAll() : undefined
@@ -292,6 +308,10 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.env.openExternal(vscode.Uri.parse(found.builds[0].webUrl))
       }
     }),
+    vscode.commands.registerCommand('worktreeWatcher.showOpenPullRequestsOnly', () =>
+      applyFilter('open-pull-requests')
+    ),
+    vscode.commands.registerCommand('worktreeWatcher.showAllWorktrees', () => applyFilter('all')),
     vscode.commands.registerCommand('worktreeWatcher.refresh', () => {
       store.refresh()
       pullRequests.refresh()

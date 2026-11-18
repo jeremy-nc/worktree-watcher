@@ -2,7 +2,7 @@
   "name": "worktree-watcher",
   "displayName": "Worktree Watcher",
   "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
-  "version": "0.34.0",
+  "version": "0.35.0",
   "publisher": "jeremyheritage",
   "license": "MIT",
   "engines": {
@@ -117,6 +117,18 @@
         "icon": "$(git-pull-request-go-to-changes)"
       },
       {
+        "command": "worktreeWatcher.showOpenPullRequestsOnly",
+        "title": "Show Only Open Pull Requests",
+        "category": "Worktrees",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "worktreeWatcher.showAllWorktrees",
+        "title": "Show All Worktrees",
+        "category": "Worktrees",
+        "icon": "$(filter-filled)"
+      },
+      {
         "command": "worktreeWatcher.connectTeamCity",
         "title": "Connect to TeamCity…",
         "category": "Worktrees",
@@ -180,6 +192,14 @@
         {
           "command": "worktreeWatcher.triggerDeploy",
           "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.showOpenPullRequestsOnly",
+          "when": "config.worktreeWatcher.github.enabled && worktreeWatcher.filter != 'open-pull-requests'"
+        },
+        {
+          "command": "worktreeWatcher.showAllWorktrees",
+          "when": "worktreeWatcher.filter == 'open-pull-requests'"
         }
       ],
       "view/title": [
@@ -189,14 +209,24 @@
           "group": "navigation@0"
         },
         {
+          "command": "worktreeWatcher.showOpenPullRequestsOnly",
+          "when": "view == worktreeWatcher.tree && config.worktreeWatcher.github.enabled && worktreeWatcher.filter != 'open-pull-requests'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "worktreeWatcher.showAllWorktrees",
+          "when": "view == worktreeWatcher.tree && worktreeWatcher.filter == 'open-pull-requests'",
+          "group": "navigation@1"
+        },
+        {
           "command": "worktreeWatcher.refresh",
           "when": "view == worktreeWatcher.tree",
-          "group": "navigation@1"
+          "group": "navigation@2"
         },
         {
           "command": "worktreeWatcher.openSettings",
           "when": "view == worktreeWatcher.tree",
-          "group": "navigation@2"
+          "group": "navigation@3"
         }
       ],
       "view/item/context": [
