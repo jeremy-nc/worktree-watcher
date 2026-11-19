@@ -62,7 +62,13 @@ import { PendingSessionStore } from './infrastructure/pendingSessionStore'
 import { FsWorktreeScanner } from './infrastructure/fsWorktreeScanner'
 import { OutputLogger } from './infrastructure/outputLogger'
 import { tildify, worktreeLabel } from './domain/display'
-import { WorktreeFilter } from './domain/worktreeFilter'
+import {
+  filterDescription,
+  parseFilter,
+  sessionsAcross,
+  SHOW_ALL,
+  WorktreeFilter
+} from './domain/worktreeFilter'
 import { buildBelongsTo } from './domain/build'
 import {
   SECTION,
@@ -184,7 +190,7 @@ export function activate(context: vscode.ExtensionContext): void {
   )
 
   // Per window: one window can watch open pull requests while another shows everything.
-  let filter = context.workspaceState.get<WorktreeFilter>(FILTER_KEY, 'all')
+  let filter = parseFilter(context.workspaceState.get(FILTER_KEY))
   const provider = new WorktreeTreeProvider(
     store,
     transcripts,
@@ -214,11 +220,22 @@ export function activate(context: vscode.ExtensionContext): void {
   const applyFilter = (next: WorktreeFilter): void => {
     filter = next
     void context.workspaceState.update(FILTER_KEY, next)
-    void vscode.commands.executeCommand('setContext', FILTER_KEY, next)
-    tree.description = next === 'open-pull-requests' ? 'open pull requests' : undefined
+    // The title-bar icon fills in while any filter is on; the kind is all it needs.
+    void vscode.commands.executeCommand('setContext', FILTER_KEY, next.kind)
+    tree.description = filterDescription(next)
     provider.refresh()
   }
   applyFilter(filter)
+
+  const chooseFilter = async (): Promise<void> => {
+    const next = await pickFilter(filter, {
+      sessions: () => sessionsAcross(store.current.repositories),
+      titles: (ids) => transcripts.titles(ids)
+    })
+    if (next) {
+      applyFilter(next)
+    }
+  }
 
   // Scan and watch only while the view is on screen.
   let active = tree.visible ? activateAll() : undefined
@@ -342,10 +359,14 @@ export function activate(context: vscode.ExtensionContext): void {
         void vscode.env.openExternal(vscode.Uri.parse(found.builds[0].webUrl))
       }
     }),
-    vscode.commands.registerCommand('worktreeWatcher.showOpenPullRequestsOnly', () =>
-      applyFilter('open-pull-requests')
-    ),
-    vscode.commands.registerCommand('worktreeWatcher.showAllWorktrees', () => applyFilter('all')),
+    vscode.commands.registerCommand('worktreeWatcher.chooseFilter', chooseFilter),
+    vscode.commands.registerCommand('worktreeWatcher.chooseFilterActive', chooseFilter),
+    vscode.commands.registerCommand('worktreeWatcher.showSessionWorktrees', async (node?: Node) => {
+      const session = await chooseSession(node, 'Show the worktrees of which session?', transcripts)
+      if (session) {
+        applyFilter({ kind: 'session', sessionId: session.id, title: await transcripts.title(session.id) })
+      }
+    }),
     vscode.commands.registerCommand('worktreeWatcher.refresh', () => {
       store.refresh()
       pullRequests.refresh()
@@ -462,6 +483,63 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     })
   )
+}
+
+/**
+ * The filter pick: the two fixed choices, then every session found in the tree.
+ *
+ * Sessions are a second list because there can be many, and because their
+ * titles are read from transcripts at pick time, so a session renamed in Claude
+ * Code shows its new name without waiting for a rescan.
+ */
+async function pickFilter(
+  current: WorktreeFilter,
+  deps: {
+    sessions: () => ReturnType<typeof sessionsAcross>
+    titles: (ids: readonly string[]) => Promise<Map<string, string>>
+  }
+): Promise<WorktreeFilter | undefined> {
+  const mark = (kind: WorktreeFilter['kind']): string | undefined =>
+    current.kind === kind ? 'current' : undefined
+  const choice = await vscode.window.showQuickPick(
+    [
+      { label: '$(list-flat) All worktrees', description: mark('all'), filterKind: 'all' as const },
+      { label: '$(git-pull-request) Open pull requests', description: mark('open-pull-requests'), filterKind: 'open-pull-requests' as const },
+      {
+        label: '$(comment-discussion) Session…',
+        description: current.kind === 'session' ? filterDescription(current) : undefined,
+        detail: 'Only the worktrees one Claude session started in or created, across repositories',
+        filterKind: 'session' as const
+      }
+    ],
+    { title: 'Filter worktrees', placeHolder: 'What to show' }
+  )
+  if (!choice) {
+    return undefined
+  }
+  if (choice.filterKind !== 'session') {
+    return choice.filterKind === 'all' ? SHOW_ALL : { kind: 'open-pull-requests' }
+  }
+
+  const sessions = deps.sessions()
+  if (sessions.length === 0) {
+    void vscode.window.showInformationMessage('No worktree has recorded a Claude session yet.')
+    return undefined
+  }
+  const titles = await deps.titles(sessions.map((session) => session.id))
+  const picked = await vscode.window.showQuickPick(
+    sessions.map((session) => ({
+      label: titles.get(session.id) ?? session.id,
+      description: `${session.worktrees} ${session.worktrees === 1 ? 'worktree' : 'worktrees'}`,
+      detail: [session.id, session.at].filter(Boolean).join('  ·  '),
+      session
+    })),
+    { title: 'Show the worktrees of which session?', matchOnDetail: true, matchOnDescription: true }
+  )
+  if (!picked) {
+    return undefined
+  }
+  return { kind: 'session', sessionId: picked.session.id, title: titles.get(picked.session.id) }
 }
 
 /**

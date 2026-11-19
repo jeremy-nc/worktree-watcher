@@ -23,7 +23,7 @@ import {
   pullRequestSummary,
   reviewSummary
 } from '../domain/pullRequest'
-import { passesFilter, WorktreeFilter } from '../domain/worktreeFilter'
+import { passesFilter, showsRepository, WorktreeFilter } from '../domain/worktreeFilter'
 
 /** Looks up what a session is doing, if the feature is on. */
 export interface ActivityLookup {
@@ -109,7 +109,9 @@ export class WorktreeTreeProvider implements vscode.TreeDataProvider<Node> {
 
   getChildren(node?: Node): Node[] {
     if (!node) {
-      return this.store.current.repositories.map((repository) => ({ kind: 'repository', repository }))
+      return this.store.current.repositories
+        .filter((repository) => showsRepository(this.filter(), repository))
+        .map((repository) => ({ kind: 'repository', repository }))
     }
     if (node.kind === 'repository') {
       const { repository } = node

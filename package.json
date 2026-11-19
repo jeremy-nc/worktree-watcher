@@ -2,7 +2,7 @@
   "name": "worktree-watcher",
   "displayName": "Worktree Watcher",
   "description": "Panel listing every git worktree under a watched directory, grouped by repository and labelled by branch.",
-  "version": "0.41.0",
+  "version": "0.42.0",
   "publisher": "jeremyheritage",
   "license": "MIT",
   "engines": {
@@ -123,16 +123,21 @@
         "icon": "$(git-pull-request-go-to-changes)"
       },
       {
-        "command": "worktreeWatcher.showOpenPullRequestsOnly",
-        "title": "Show Only Open Pull Requests",
+        "command": "worktreeWatcher.chooseFilter",
+        "title": "Filter Worktrees…",
         "category": "Worktrees",
         "icon": "$(filter)"
       },
       {
-        "command": "worktreeWatcher.showAllWorktrees",
-        "title": "Show All Worktrees",
+        "command": "worktreeWatcher.chooseFilterActive",
+        "title": "Filter Worktrees…",
         "category": "Worktrees",
         "icon": "$(filter-filled)"
+      },
+      {
+        "command": "worktreeWatcher.showSessionWorktrees",
+        "title": "Show This Session's Worktrees",
+        "category": "Worktrees"
       },
       {
         "command": "worktreeWatcher.connectTeamCity",
@@ -200,15 +205,15 @@
           "when": "false"
         },
         {
-          "command": "worktreeWatcher.showOpenPullRequestsOnly",
-          "when": "config.worktreeWatcher.github.enabled && worktreeWatcher.filter != 'open-pull-requests'"
-        },
-        {
-          "command": "worktreeWatcher.showAllWorktrees",
-          "when": "worktreeWatcher.filter == 'open-pull-requests'"
-        },
-        {
           "command": "worktreeWatcher.addressBotComments",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.chooseFilterActive",
+          "when": "false"
+        },
+        {
+          "command": "worktreeWatcher.showSessionWorktrees",
           "when": "false"
         }
       ],
@@ -219,13 +224,13 @@
           "group": "navigation@0"
         },
         {
-          "command": "worktreeWatcher.showOpenPullRequestsOnly",
-          "when": "view == worktreeWatcher.tree && config.worktreeWatcher.github.enabled && worktreeWatcher.filter != 'open-pull-requests'",
+          "command": "worktreeWatcher.chooseFilter",
+          "when": "view == worktreeWatcher.tree && worktreeWatcher.filter == 'all'",
           "group": "navigation@1"
         },
         {
-          "command": "worktreeWatcher.showAllWorktrees",
-          "when": "view == worktreeWatcher.tree && worktreeWatcher.filter == 'open-pull-requests'",
+          "command": "worktreeWatcher.chooseFilterActive",
+          "when": "view == worktreeWatcher.tree && worktreeWatcher.filter != 'all'",
           "group": "navigation@1"
         },
         {
@@ -289,6 +294,11 @@
           "command": "worktreeWatcher.copySessionId",
           "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree\\.claude/",
           "group": "3_claude@2"
+        },
+        {
+          "command": "worktreeWatcher.showSessionWorktrees",
+          "when": "view == worktreeWatcher.tree && viewItem =~ /worktreeWatcher\\.worktree\\.claude/",
+          "group": "3_claude@3"
         },
         {
           "command": "worktreeWatcher.openClaudeSession",

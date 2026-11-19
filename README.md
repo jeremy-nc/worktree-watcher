@@ -71,19 +71,30 @@ Hover for the title, checks, review decision and a link; right-click for **Open
 Pull Request**. A merged or closed PR means nothing is left to push, which the
 tooltip says plainly — it is the signal that a worktree can go.
 
-### Showing only open pull requests
+### Filtering the tree
 
-The filter button beside **Check Out Review Requests** narrows each repository to
-worktrees whose pull request is **open**. Drafts, merged and closed pull requests,
-and branches with no pull request yet are hidden. The main checkout and every
-repository row stay, so the tree keeps its shape and only the branches under each
-`<repo>.worktrees/` entry come and go. The view title reads *open pull requests*
-while it is on.
+The filter button beside **Check Out Review Requests** opens a short list:
 
-VS Code's title bar has no toggle button, so this is two commands, **Show Only
-Open Pull Requests** (outline filter) and **Show All Worktrees** (filled filter),
-swapped by the `worktreeWatcher.filter` context key. The choice is kept per window
-in workspace state: it survives a reload, and other windows keep their own.
+| | Shows |
+|---|---|
+| **All worktrees** | Everything |
+| **Open pull requests** | Worktrees whose pull request is **open**. Drafts, merged and closed, and branches with no pull request yet are hidden. The main checkout and every repository row stay, so the tree keeps its shape and only the branches under each `<repo>.worktrees/` entry come and go |
+| **Session…** | A second list of every Claude session recorded anywhere in the tree, newest first, with its title and how many worktrees it touched. Pick one and only those worktrees show, **across repositories**; repositories the session never touched are hidden, as is the main checkout, which never records a session |
+
+The view title says what is on (*open pull requests*, *session: Add the thing*),
+and the icon fills in. Right-clicking a worktree with a session offers **Show This
+Session's Worktrees** as a shortcut into the third one. The choice is kept per
+window in workspace state: it survives a reload, and other windows keep their own.
+
+The session filter shows where a session **started** or what it **created**: the
+SessionStart hook records a session in the worktree it starts in, and the
+`/worktree-watcher` skill records the creating session in each worktree it makes.
+A session that starts in one worktree and `cd`s into another is recorded only in
+the first.
+
+VS Code's title bar cannot change a button's icon, so the open and filled states
+are two commands with the same handler, swapped by the `worktreeWatcher.filter`
+context key.
 
 ## Bot review comments
 
