@@ -135,8 +135,9 @@ folder inside git's own per-worktree metadata:
 
 ```
 <repo>/.git/worktrees/<name>/worktree-watcher/
-  claude-sessions        the /worktree-watcher skill's hook and script
-  pull-request.json      this extension, after each poll
+  claude-sessions          the /worktree-watcher skill's hook and script
+  pull-request.json        this extension, after each poll
+  watch-review-<n>.pid     a running watcher for pull request n, while it runs
 ```
 
 Git deletes the directory with `git worktree remove`, never shows it in
@@ -175,6 +176,12 @@ The file only changes when a poll runs, so pull requests are polled whenever
 row still waits for the panel. A session waiting on its worktree's file would
 otherwise wake only when you clicked the Worktrees tab.
 
+The worktree scan runs on the same terms, because the poll needs the branch
+list and only a scan produces one: a focused window whose panel has never been
+shown would otherwise poll nothing. The scan is a few milliseconds and its
+watchers are non-recursive, so this costs little, and it means a branch switch
+in a focused window is noticed too.
+
 | Situation | Pull request poll |
 |---|---|
 | Worktrees panel visible | Immediately when shown, then every interval |
@@ -195,9 +202,10 @@ raising a draft pull request from a worktree, run
 /worktree-watcher-watch-review
 ```
 
-in that session. It starts `scripts/watch-review.sh` as a **background task**
-and goes idle. The script reads the worktree's `pull-request.json` every five
-seconds and exits the moment it records bot threads; that exit is what wakes
+in that session. It starts `scripts/watch-review.sh <n>` as a **background
+task** and goes idle. The script reads the worktree's `pull-request.json` every
+five seconds and exits the moment it records bot threads on pull request `n`;
+that exit is what wakes
 the session, which then runs `draft-to-ready --dry` and shows you its plan:
 what each bot wants, what it would fix and how, what needs your call. Nothing
 is changed until you ask for the full run. No tokens are spent while it waits, and the script never touches
@@ -206,11 +214,28 @@ always agree.
 
 | The file says | The script prints | The session then |
 |---|---|---|
-| `botThreads > 0` | `bot-threads N` | runs `/nc-create-pull-request:draft-to-ready <n> --dry` and presents the plan |
-| `state` is `open` | `ready` | says the pull request is already with its reviewers |
-| `merged` or `closed` | that word | says so, stops |
-| missing, or `botThreads` is 0 | nothing yet | stays idle |
-| nothing for a day | `timeout` | offers to watch again |
+| `botThreads > 0`, for pull request `n` | `bot-threads N n` | runs `/nc-create-pull-request:draft-to-ready n --dry` and presents the plan |
+| `state` is `open` | `ready n` | says the pull request is already with its reviewers |
+| `merged` or `closed` | that word and `n` | says so, stops |
+| another pull request's number, missing, or `botThreads` is 0 | nothing yet | stays idle |
+| the worktree's metadata is gone | `gone n` | says the worktree was removed |
+| nothing for a day | `timeout n` | offers to watch again |
+| another watcher holds `n` | `already-watching n <pid>` | offers to kill that pid and watch again |
+
+**The number is the key.** The file describes whichever branch the worktree is
+on, so after a branch switch it describes a different pull request; a watcher
+ignores files for other numbers and waits for its own. Two pull requests in one
+worktree are two watchers.
+
+**One watcher per pull request.** A watcher holds `watch-review-<n>.pid`,
+created exclusively (`noclobber`, the same exclusive-create idea as the shared
+cache's locks) with its pid inside, and removes it on any exit the shell can
+see: normal, HUP, INT or TERM. A second start finds the file and checks whether
+its pid is alive **and running this script for this number** (`ps`), since a
+pid left by a reboot can belong to anything; a live watcher wins and is named,
+anything else is replaced. A window that is force-quit leaves a live orphan,
+which is why the name includes the pid: the next session can offer to kill it,
+and the script has already checked it is a watcher.
 
 It is one-shot by design: if you go on to run `draft-to-ready` for real, its
 own loop handles every later round of bot reviews. And because the file only moves when

@@ -225,7 +225,7 @@ export function activate(context: vscode.ExtensionContext): void {
   tree.onDidChangeVisibility(() => {
     active?.dispose()
     active = tree.visible ? activateAll() : undefined
-    syncPullRequestPolling()
+    syncFocusedPolling()
   })
 
   function activateAll(): vscode.Disposable {
@@ -240,19 +240,22 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // Pull requests keep polling while this window is in use, panel or not: a
   // session waiting on its worktree's pull-request.json wakes only when a poll
-  // writes it. The shared cache keeps that to one request per interval across
-  // windows, and nothing polls while VS Code is in the background.
-  let pullRequestPolling: vscode.Disposable | undefined
-  function syncPullRequestPolling(): void {
+  // writes it. The poll needs the branch list, and only a scan produces one, so
+  // the scan runs on the same terms; it is a few milliseconds and a handful of
+  // non-recursive watchers. The shared cache keeps the requests to one per
+  // interval across windows, and nothing polls while VS Code is in the background.
+  let focusedPolling: vscode.Disposable | undefined
+  function syncFocusedPolling(): void {
     const wanted = tree.visible || windowFocused
-    if (wanted && !pullRequestPolling) {
-      pullRequestPolling = pullRequests.activate()
-    } else if (!wanted && pullRequestPolling) {
-      pullRequestPolling.dispose()
-      pullRequestPolling = undefined
+    if (wanted && !focusedPolling) {
+      const running = [store.activate(), pullRequests.activate()]
+      focusedPolling = new vscode.Disposable(() => running.forEach((item) => item.dispose()))
+    } else if (!wanted && focusedPolling) {
+      focusedPolling.dispose()
+      focusedPolling = undefined
     }
   }
-  syncPullRequestPolling()
+  syncFocusedPolling()
 
   store.onDidChange((state) => {
     tree.message = state.status === 'error' ? `Scan failed: ${state.error}` : undefined
@@ -272,7 +275,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.onDidChangeWindowState((state) => {
       const gained = state.focused && !windowFocused
       windowFocused = state.focused
-      syncPullRequestPolling()
+      syncFocusedPolling()
       if (gained) {
         refreshRemote()
       }
@@ -289,7 +292,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // Same command as the title-bar button, so either route opens the list.
     new ReviewRequestStatusBar(reviewRequests, 'worktreeWatcher.checkOutReviewRequests'),
     new vscode.Disposable(() => active?.dispose()),
-    new vscode.Disposable(() => pullRequestPolling?.dispose()),
+    new vscode.Disposable(() => focusedPolling?.dispose()),
     pullRequests,
     activities,
     builds,
