@@ -46,11 +46,17 @@ on, so after a branch switch it describes a different pull request; the watcher
 ignores those and keeps waiting for its own. Watching two pull requests from one
 worktree is fine: run the skill once per number.
 
+A new push to a branch you are already watching needs no new watcher: the one
+running is still asking the right question, and the bots' review of the new
+commit is what it will wake on. If this session already started a watcher for
+this number and it has not finished, say so and start nothing; the lock would
+refuse a second one anyway.
+
 ### 3. When the task finishes, act on its last line
 
 | Last line | Do |
 |---|---|
-| `bot-threads N <n>` | Run `/nc-create-pull-request:draft-to-ready <n> --dry`. That is its planning phase alone: it reads every thread, says which it would fix and how, and which need the user's call, and **writes nothing**: no replies, no reactions, no pushes. Present that plan and stop. If the user then wants it done, run `/nc-create-pull-request:draft-to-ready <n>` without `--dry`; it stops once more at its own confirmation gate before changing anything. |
+| `bot-threads N <n>` | Act **once per number**, however many such lines arrive together. Run `/nc-create-pull-request:draft-to-ready <n> --dry`. That is its planning phase alone: it reads every thread, says which it would fix and how, and which need the user's call, and **writes nothing**: no replies, no reactions, no pushes. Present that plan and stop. If the user then wants it done, run `/nc-create-pull-request:draft-to-ready <n>` without `--dry`; it stops once more at its own confirmation gate before changing anything. |
 | `ready <n>` | Say the pull request is already open for review, and stop. |
 | `merged <n>` or `closed <n>` | Say so, and stop. |
 | `gone <n>` | Say the worktree has been removed, and stop. |
